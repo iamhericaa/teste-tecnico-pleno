@@ -1,0 +1,64 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderType {
+  COMPRA
+  VENDA
+}
+
+enum OrderStatus {
+  PENDENTE
+  PROCESSANDO
+  EXECUTADA
+  REJEITADA
+  CANCELADA
+}
+
+model Order {
+  id        Int        @id @default(autoincrement())
+  userId    String     @map("user_id")
+  symbol    String
+  type      OrderType
+  quantity  Decimal    @db.Decimal(15, 8)
+  price     Decimal    @db.Decimal(15, 2)
+  status    OrderStatus @default(PENDENTE)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@map("orders")
+}
+
+model Position {
+  id              Int     @id @default(autoincrement())
+  userId          String  @map("user_id")
+  symbol          String
+  quantity        Decimal @db.Decimal(15, 8)
+  averagePrice    Decimal @db.Decimal(15, 2) @map("average_price")
+  totalValue      Decimal @db.Decimal(20, 2) @map("total_value")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, symbol])
+  @@map("positions")
+}
+
+model Asset {
+  id              Int     @id @default(autoincrement())
+  symbol          String  @unique
+  name            String
+  referencePrice  Decimal @db.Decimal(15, 2) @map("reference_price")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("assets")
+}

@@ -1,0 +1,30 @@
+{
+  "name": "processamento-ativos",
+  "version": "1.0.0",
+  "description": "Lambda TypeScript para processamento de ordens via evento SQS usando ProxySQL como proxy RDS",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "start:poller": "node dist/poller.js",
+    "dev:poller": "ts-node-dev --respawn --transpile-only src/poller.ts",
+    "local:invoke": "npx ts-node src/local-invoke.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.10.0",
+    "winston": "^3.17.0",
+    "@aws-sdk/client-sqs": "^3.1039.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.109",
+    "@types/node": "^20.13.0",
+    "prisma": "^5.10.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.4.5",
+    "winston": "^3.17.0"
+  }
+}

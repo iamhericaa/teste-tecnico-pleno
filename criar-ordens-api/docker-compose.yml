@@ -1,0 +1,205 @@
+version: '3.8'
+
+services:
+  # MySQL Database (mesmo do leitura-ativos)
+  mysql:
+    image: mysql:8.0
+    container_name: investment_orders_db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: investment_orders
+      MYSQL_USER: app_user
+      MYSQL_PASSWORD: app_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../leitura-ativos/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - investment-network
+
+  # LocalStack para SQS
+  localstack:
+    image: localstack/localstack:3.8
+    container_name: localstack_sqs
+    environment:
+      - SERVICES=sqs
+      - DEFAULT_REGION=sa-east-1
+      - AWS_ACCESS_KEY_ID=teste
+      - AWS_SECRET_ACCESS_KEY=teste
+      - SQS_ENDPOINT_STRATEGY=path
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - SQS_DISABLE_MESSAGE_ID_VALIDATION=1
+
+    ports:
+      - "4566:4566"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:4566/_localstack/health" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - investment-network
+
+  # Inicializador da fila SQS automático
+  init-sqs:
+    image: amazon/aws-cli
+    container_name: init_sqs_queue
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=teste
+      - AWS_SECRET_ACCESS_KEY=teste
+      - AWS_DEFAULT_REGION=sa-east-1
+    entrypoint: >
+      /bin/sh -c "
+        aws sqs create-queue --queue-name orders-queue --endpoint-url=http://localstack:4566;
+        echo '✅ Fila SQS orders-queue criada com sucesso!';
+        exit 0;
+      "
+    networks:
+      - investment-network
+
+  # API Criar Ordens
+  api-criar-ordens:
+    build: .
+    container_name: criar_ordens_api
+    environment:
+      PORT: 62001
+      # Conexão com MySQL usando nome do serviço (interno do Docker)
+      DATABASE_URL: "mysql://app_user:app_password@mysql:3306/investment_orders"
+      SQS_QUEUE_NAME: orders-queue
+      SQS_ENDPOINT: http://localstack:4566
+      AWS_REGION: sa-east-1
+      AWS_ACCESS_KEY_ID: teste
+      AWS_SECRET_ACCESS_KEY: teste
+    ports:
+      - "62001:62001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      init-sqs:
+        condition: service_completed_successfully
+    networks:
+      - investment-network
+    restart: unless-stopped
+
+  api-leitura-ativos:
+    build: ../leitura-ativos
+    container_name: leitura_ativos_api
+    environment:
+      PORT: 62000
+      # Conexão com MySQL usando nome do serviço (interno do Docker)
+      DATABASE_URL: "mysql://app_user:app_password@mysql:3306/investment_orders"
+      SQS_ENDPOINT: http://localstack:4566
+      AWS_REGION: sa-east-1
+      AWS_ACCESS_KEY_ID: teste
+      AWS_SECRET_ACCESS_KEY: teste
+    ports:
+      - "62000:62000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      init-sqs:
+        condition: service_completed_successfully
+    networks:
+      - investment-network
+    restart: unless-stopped
+
+  lambda-processamento-ativos:
+    build: ../processamento-ativos
+    container_name: processamento_ativos_api
+    environment:
+      # Conexão com MySQL usando nome do serviço (interno do Docker)
+      DATABASE_URL: "mysql://app_user:app_password@mysql:3306/investment_orders"
+      SQS_ENDPOINT: http://localstack:4566
+      SQS_QUEUE_NAME: orders-queue
+      AWS_REGION: sa-east-1
+      AWS_ACCESS_KEY_ID: teste
+      AWS_SECRET_ACCESS_KEY: teste
+    # Não expondo porta HTTP — é uma Lambda invocada via SQS (local)
+    depends_on:
+      mysql:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      init-sqs:
+        condition: service_completed_successfully
+    networks:
+      - investment-network
+    restart: unless-stopped
+
+  # Redis para Cache (usado possivelmente pelo processamento-ativos)
+  redis:
+    image: redis:alpine
+    container_name: investment_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - investment-network
+
+  init-redis:
+    image: python:3.11-alpine
+    container_name: init_redis
+    depends_on:
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=investment_orders
+      - DB_USER=app_user
+      - DB_PASSWORD=app_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    command: >
+      /bin/sh -c "
+        pip install pymysql redis --quiet &&
+        python /scripts/init_redis.py
+      "
+    volumes:
+      - ./scripts:/scripts
+    networks:
+      - investment-network
+
+  proxysql:
+    image: proxysql/proxysql:latest
+    container_name: proxysql
+    ports:
+      - "6033:6033" # porta de conexão
+      - "6032:6032" # porta admin
+    volumes:
+      - ./scripts/proxysql.cnf:/etc/proxysql.cnf
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - investment-network
+volumes:
+  mysql_data:
+  localstack_data:
+
+networks:
+  investment-network:
+    driver: bridge

@@ -1,0 +1,10 @@
+{
+    "orderId": 3,
+    "userId": "user-001",
+    "symbol": "ITUB4",
+    "type": "COMPRA",
+    "quantity": 10,
+    "price": 32.8,
+    "status": "PENDENTE",
+    "timestamp": "2026-05-16T00:29:38.103Z"
+}
