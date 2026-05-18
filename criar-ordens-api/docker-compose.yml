@@ -70,6 +70,34 @@ services:
     networks:
       - investment-network
 
+  # Worker Atualiza Ativos
+  worker-atualiza-ativos:
+    build: ../atualiza-ativos
+    container_name: atualiza_ativos_worker
+    environment:
+      PORT: 62002
+      QUOTATIONS_URL: http://host.docker.internal:3001/quotations
+      POLL_INTERVAL_MS: 1000
+      RETRY_ATTEMPTS: 3
+      REDIS_URL: redis://redis:6379
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: app_user
+      DB_PASSWORD: app_password
+      DB_NAME: investment_orders
+    ports:
+      - "62002:62002"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      init-sqs:
+        condition: service_completed_successfully
+    networks:
+      - investment-network
+    restart: unless-stopped
+
   # API Criar Ordens
   api-criar-ordens:
     build: .
@@ -96,6 +124,7 @@ services:
       - investment-network
     restart: unless-stopped
 
+  # API Leitura de Ativos
   api-leitura-ativos:
     build: ../leitura-ativos
     container_name: leitura_ativos_api
@@ -120,6 +149,7 @@ services:
       - investment-network
     restart: unless-stopped
 
+  # Lambda Processamento de Ordens
   lambda-processamento-ativos:
     build: ../processamento-ativos
     container_name: processamento_ativos_api
@@ -154,6 +184,17 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - investment-network
+
+  redisinsight:
+    image: redislabs/redisinsight:latest
+    container_name: redis_insight
+    ports:
+      - "5540:5540"
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
       - investment-network
 
