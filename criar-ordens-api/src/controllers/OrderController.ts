@@ -10,8 +10,8 @@ export class OrderController {
   private orderService: OrderService;
 
 
-  constructor() {
-    this.orderService = new OrderService();
+  constructor(orderService = new OrderService()) {
+    this.orderService = orderService;
   }
 
 

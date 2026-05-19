@@ -10,8 +10,10 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node16"
+    "moduleResolution": "node16",
+    "types": ["node", "jest", "aws-lambda"],
+    "isolatedModules": true
   },
   "include": ["src"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "src/__tests__"]
 }
