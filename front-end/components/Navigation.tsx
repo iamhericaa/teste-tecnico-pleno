@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
+import { USER_IDS, UserId } from '@/lib/useSelectedUser';
 
 interface NavProps {
   activeTab: string;
+  userId: UserId;
+  onUserChange: (userId: UserId) => void;
 }
 
-export default function Navigation({ activeTab }: NavProps) {
+export default function Navigation({ activeTab, userId, onUserChange }: NavProps) {
   return (
     <nav className="bg-primary text-white shadow-lg sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4">
@@ -51,7 +53,18 @@ export default function Navigation({ activeTab }: NavProps) {
           </div>
 
           <div className="text-sm bg-white bg-opacity-20 px-3 py-1 rounded">
-            <span className="font-semibold">user-001</span>
+            <select
+              value={userId}
+              onChange={(event) => onUserChange(event.target.value as UserId)}
+              className="bg-transparent font-semibold text-white outline-none"
+              aria-label="Selecionar usuário"
+            >
+              {USER_IDS.map((id) => (
+                <option key={id} value={id} className="text-gray-900">
+                  {id}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>

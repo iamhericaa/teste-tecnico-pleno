@@ -1,64 +1,74 @@
 import axios from 'axios';
+import type { UserId } from './useSelectedUser';
 
-const API_BASE_URL = 'http://localhost:62000';
+const LEITURA_API_BASE_URL =
+  process.env.NEXT_PUBLIC_LEITURA_API_URL ?? 'http://localhost:62000';
+const ORDENS_API_BASE_URL =
+  process.env.NEXT_PUBLIC_ORDENS_API_URL ?? 'http://localhost:62001';
 
-// Tipo para usuário
-const CURRENT_USER_ID = 'user-001';
+const leituraApi = axios.create({
+  baseURL: LEITURA_API_BASE_URL,
+});
+
+const ordensApi = axios.create({
+  baseURL: ORDENS_API_BASE_URL,
+});
 
 export const api = {
-  // ===== QUOTATIONS =====
   getQuotations: async () => {
-    const response = await axios.get(`${API_BASE_URL}/quotations`);
+    const response = await leituraApi.get('/quotations');
     return response.data;
   },
 
   getQuotation: async (symbol: string) => {
-    const response = await axios.get(`${API_BASE_URL}/quotations/${symbol}`);
+    const response = await leituraApi.get(`/quotations/${symbol}`);
     return response.data;
   },
 
-  // ===== ORDERS =====
   createOrder: async (orderData: {
+    userId: UserId;
     symbol: string;
     type: 'COMPRA' | 'VENDA';
     quantity: number;
     price: number;
   }) => {
-    const response = await axios.post(`${API_BASE_URL}/orders`, {
-      userId: CURRENT_USER_ID,
-      ...orderData,
-    });
+    const payload = {
+      userId: orderData.userId,
+      symbol: orderData.symbol,
+      type: orderData.type,
+      quantity: orderData.quantity,
+      price: orderData.price,
+    };
+
+    console.groupCollapsed('[API] POST /criar-ordens');
+    console.log('URL:', `${ORDENS_API_BASE_URL}/criar-ordens`);
+    console.log('Payload:', payload);
+    console.groupEnd();
+
+    const response = await ordensApi.post('/criar-ordens', payload);
     return response.data;
   },
 
-  getOrders: async () => {
-    const response = await axios.get(`${API_BASE_URL}/orders`, {
-      params: { userId: CURRENT_USER_ID },
+  getOrders: async (userId: UserId) => {
+    const response = await leituraApi.get('/orders', {
+      params: { userId },
     });
     return response.data;
   },
 
   getOrder: async (orderId: number) => {
-    const response = await axios.get(`${API_BASE_URL}/orders/${orderId}`);
+    const response = await leituraApi.get(`/orders/${orderId}`);
     return response.data;
   },
 
   cancelOrder: async (orderId: number) => {
-    const response = await axios.post(`${API_BASE_URL}/orders/${orderId}/cancel`);
+    const response = await ordensApi.post(`/orders/${orderId}/cancel`);
     return response.data;
   },
 
-  processOrder: async (orderId: number, currentPrice: number) => {
-    const response = await axios.post(`${API_BASE_URL}/orders/${orderId}/process`, {
-      currentPrice,
-    });
-    return response.data;
-  },
-
-  // ===== POSITIONS =====
-  getPositions: async () => {
-    const response = await axios.get(`${API_BASE_URL}/positions`, {
-      params: { userId: CURRENT_USER_ID },
+  getPositions: async (userId: UserId) => {
+    const response = await leituraApi.get('/positions', {
+      params: { userId },
     });
     return response.data;
   },

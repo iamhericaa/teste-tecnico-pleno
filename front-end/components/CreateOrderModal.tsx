@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { UserId } from '@/lib/useSelectedUser';
 
 interface Asset {
   symbol: string;
@@ -11,6 +12,7 @@ interface Asset {
 
 interface CreateOrderModalProps {
   asset: Asset | null;
+  userId: UserId;
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
@@ -18,6 +20,7 @@ interface CreateOrderModalProps {
 
 export default function CreateOrderModal({
   asset,
+  userId,
   isOpen,
   onClose,
   onSuccess,
@@ -27,6 +30,12 @@ export default function CreateOrderModal({
   const [price, setPrice] = useState(asset?.reference_price || 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (asset) {
+      setPrice(asset.reference_price);
+    }
+  }, [asset]);
 
   if (!isOpen || !asset) return null;
 
@@ -47,7 +56,8 @@ export default function CreateOrderModal({
     try {
       setLoading(true);
       await api.createOrder({
-        symbol: asset.symbol,
+        userId,
+        symbol: asset.symbol.trim().toUpperCase(),
         type,
         quantity: Number(quantity),
         price: Number(price),
@@ -57,7 +67,11 @@ export default function CreateOrderModal({
       handleClose();
     } catch (err: any) {
       console.error('Erro ao criar ordem:', err);
-      setError(err.response?.data?.error || 'Erro ao criar ordem');
+      setError(
+        err.response?.data?.message ||
+          err.response?.data?.error ||
+          'Erro ao criar ordem'
+      );
     } finally {
       setLoading(false);
     }

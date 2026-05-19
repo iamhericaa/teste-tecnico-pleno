@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { UserId } from '@/lib/useSelectedUser';
 
 interface Order {
   id: number;
@@ -15,23 +16,26 @@ interface Order {
 }
 
 interface OrderListProps {
+  userId: UserId;
   refresh?: number;
 }
 
-export default function OrderList({ refresh = 0 }: OrderListProps) {
+export default function OrderList({ userId, refresh = 0 }: OrderListProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancelingId, setCancelingId] = useState<number | null>(null);
+  const [detailsLoadingId, setDetailsLoadingId] = useState<number | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
   useEffect(() => {
     fetchOrders();
-  }, [refresh]);
+  }, [refresh, userId]);
 
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const data = await api.getOrders();
+      const data = await api.getOrders(userId);
       setOrders(data);
       setError(null);
     } catch (err) {
@@ -52,6 +56,19 @@ export default function OrderList({ refresh = 0 }: OrderListProps) {
       alert(err.response?.data?.error || 'Erro ao cancelar ordem');
     } finally {
       setCancelingId(null);
+    }
+  };
+
+  const handleShowDetails = async (orderId: number) => {
+    try {
+      setDetailsLoadingId(orderId);
+      const order = await api.getOrder(orderId);
+      setSelectedOrder(order);
+    } catch (err: any) {
+      console.error('Erro ao buscar detalhe da ordem:', err);
+      alert(err.response?.data?.error || 'Erro ao buscar detalhe da ordem');
+    } finally {
+      setDetailsLoadingId(null);
     }
   };
 
@@ -147,14 +164,37 @@ export default function OrderList({ refresh = 0 }: OrderListProps) {
             </div>
           </div>
 
-          {order.status === 'PENDENTE' && (
+          <div className="mt-3 flex flex-wrap gap-2">
             <button
-              onClick={() => handleCancel(order.id)}
-              disabled={cancelingId === order.id}
-              className="mt-3 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-gray-400 text-sm font-semibold transition"
+              onClick={() => handleShowDetails(order.id)}
+              disabled={detailsLoadingId === order.id}
+              className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-700 disabled:bg-gray-400 text-sm font-semibold transition"
             >
-              {cancelingId === order.id ? 'Cancelando...' : 'Cancelar Ordem'}
+              {detailsLoadingId === order.id ? 'Carregando...' : 'Detalhes'}
             </button>
+
+            {order.status === 'PENDENTE' && (
+              <button
+                onClick={() => handleCancel(order.id)}
+                disabled={cancelingId === order.id}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-gray-400 text-sm font-semibold transition"
+              >
+                {cancelingId === order.id ? 'Cancelando...' : 'Cancelar Ordem'}
+              </button>
+            )}
+          </div>
+
+          {selectedOrder?.id === order.id && (
+            <div className="mt-4 bg-gray-50 border border-gray-200 rounded p-3 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <span><strong>ID:</strong> {selectedOrder.id}</span>
+                <span><strong>Ativo:</strong> {selectedOrder.symbol}</span>
+                <span><strong>Status:</strong> {selectedOrder.status}</span>
+                <span><strong>Tipo:</strong> {selectedOrder.type}</span>
+                <span><strong>Quantidade:</strong> {selectedOrder.quantity}</span>
+                <span><strong>Preço:</strong> R$ {selectedOrder.price.toFixed(2)}</span>
+              </div>
+            </div>
           )}
         </div>
       ))}

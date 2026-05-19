@@ -17,14 +17,24 @@ export default function AssetList({ onSelectAsset }: AssetListProps) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadingSymbol, setLoadingSymbol] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAssets();
+    fetchAssets(true);
+
+    const intervalId = window.setInterval(() => {
+      fetchAssets();
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
   }, []);
 
-  const fetchAssets = async () => {
+  const fetchAssets = async (showLoading = false) => {
     try {
-      setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+      }
+
       const data = await api.getQuotations();
       setAssets(data);
       setError(null);
@@ -32,7 +42,22 @@ export default function AssetList({ onSelectAsset }: AssetListProps) {
       console.error('Erro ao buscar ativos:', err);
       setError('Erro ao carregar ativos');
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleSelectAsset = async (symbol: string) => {
+    try {
+      setLoadingSymbol(symbol);
+      const asset = await api.getQuotation(symbol);
+      onSelectAsset(asset);
+    } catch (err) {
+      console.error('Erro ao buscar ativo:', err);
+      setError('Erro ao carregar ativo selecionado');
+    } finally {
+      setLoadingSymbol(null);
     }
   };
 
@@ -49,7 +74,7 @@ export default function AssetList({ onSelectAsset }: AssetListProps) {
       <div className="p-6 bg-red-50 rounded-lg shadow border border-red-200">
         <p className="text-red-600">{error}</p>
         <button
-          onClick={fetchAssets}
+          onClick={() => fetchAssets(true)}
           className="mt-2 px-4 py-2 bg-primary text-white rounded hover:bg-green-600"
         >
           Tentar novamente
@@ -64,7 +89,7 @@ export default function AssetList({ onSelectAsset }: AssetListProps) {
         <div
           key={asset.symbol}
           className="p-4 bg-white rounded-lg shadow border-l-4 border-primary hover:shadow-lg transition cursor-pointer"
-          onClick={() => onSelectAsset(asset)}
+          onClick={() => handleSelectAsset(asset.symbol)}
         >
           <div className="flex justify-between items-start mb-2">
             <div>
@@ -73,16 +98,17 @@ export default function AssetList({ onSelectAsset }: AssetListProps) {
             </div>
           </div>
           <div className="text-2xl font-bold text-primary">
-            R$ {asset.reference_price}
+            R$ {asset.reference_price.toFixed(2)}
           </div>
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onSelectAsset(asset);
+              handleSelectAsset(asset.symbol);
             }}
             className="mt-3 w-full px-4 py-2 bg-primary text-white rounded hover:bg-green-600 transition font-semibold"
+            disabled={loadingSymbol === asset.symbol}
           >
-            Criar Ordem
+            {loadingSymbol === asset.symbol ? 'Carregando...' : 'Criar Ordem'}
           </button>
         </div>
       ))}

@@ -27,14 +27,7 @@ for row in cur.fetchall():
     r.set(key, str(row['reference_price']))
     print(f"✅ {key} → {row['reference_price']}")
 
-# 2. Cache de preços (price_cache tem precedência se preenchido)
-cur.execute("SELECT symbol, last_price FROM price_cache")
-for row in cur.fetchall():
-    key = f"price:{row['symbol']}"
-    r.set(key, str(row['last_price']))
-    print(f"✅ {key} → {row['last_price']} (price_cache)")
-
-# 3. Posições dos usuários
+# 2. Posições dos usuários
 cur.execute("SELECT user_id, symbol, quantity, average_price FROM positions")
 for row in cur.fetchall():
     key = f"position:{row['user_id']}:{row['symbol']}"

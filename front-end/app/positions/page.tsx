@@ -3,13 +3,15 @@
 import { useState } from 'react';
 import Navigation from '@/components/Navigation';
 import PositionList from '@/components/PositionList';
+import { useSelectedUser } from '@/lib/useSelectedUser';
 
 export default function PositionsPage() {
+  const { userId, setUserId } = useSelectedUser();
   const [refresh, setRefresh] = useState(0);
 
   return (
     <>
-      <Navigation activeTab="positions" />
+      <Navigation activeTab="positions" userId={userId} onUserChange={setUserId} />
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="mb-8 flex justify-between items-center">
           <div>
@@ -24,7 +26,7 @@ export default function PositionsPage() {
           </button>
         </div>
 
-        <PositionList refresh={refresh} />
+        <PositionList userId={userId} refresh={refresh} />
       </main>
     </>
   );

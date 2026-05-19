@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import type { UserId } from '@/lib/useSelectedUser';
 
 interface Position {
   id: number;
@@ -10,36 +11,52 @@ interface Position {
   average_price: number;
   asset_name: string;
   current_price: number;
-  total_value: number;
   profit_loss: number;
 }
 
 interface PositionListProps {
+  userId: UserId;
   refresh?: number;
 }
 
-export default function PositionList({ refresh = 0 }: PositionListProps) {
+export default function PositionList({ userId, refresh = 0 }: PositionListProps) {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPositions();
-  }, [refresh]);
+    fetchPositions(true);
 
-  const fetchPositions = async () => {
+    const intervalId = window.setInterval(() => {
+      fetchPositions();
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [refresh, userId]);
+
+  const fetchPositions = async (showLoading = false) => {
     try {
-      setLoading(true);
-      const data = await api.getPositions();
+      if (showLoading) {
+        setLoading(true);
+      }
+
+      const data = await api.getPositions(userId);
       setPositions(data);
       setError(null);
     } catch (err) {
       console.error('Erro ao buscar posições:', err);
       setError('Erro ao carregar posições');
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   };
+
+  const formatNumber = (value: number) => value.toFixed(2);
+  const formatCurrency = (value: number) => `R$ ${formatNumber(value)}`;
+  const getPositionValue = (position: Position) =>
+    position.quantity * position.current_price;
 
   if (loading) {
     return (
@@ -54,7 +71,7 @@ export default function PositionList({ refresh = 0 }: PositionListProps) {
       <div className="p-6 bg-red-50 rounded-lg shadow border border-red-200">
         <p className="text-red-600">{error}</p>
         <button
-          onClick={fetchPositions}
+          onClick={() => fetchPositions(true)}
           className="mt-2 px-4 py-2 bg-primary text-white rounded hover:bg-green-600"
         >
           Tentar novamente
@@ -71,7 +88,10 @@ export default function PositionList({ refresh = 0 }: PositionListProps) {
     );
   }
 
-  const totalPortfolioValue = positions.reduce((sum, p) => sum + p.total_value, 0);
+  const totalPortfolioValue = positions.reduce(
+    (sum, position) => sum + getPositionValue(position),
+    0
+  );
   const totalProfitLoss = positions.reduce((sum, p) => sum + p.profit_loss, 0);
 
   return (
@@ -80,12 +100,12 @@ export default function PositionList({ refresh = 0 }: PositionListProps) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="p-4 bg-primary text-white rounded-lg shadow">
           <p className="text-sm opacity-90">Valor Total da Carteira</p>
-          <p className="text-3xl font-bold">R$ {totalPortfolioValue}</p>
+          <p className="text-3xl font-bold">{formatCurrency(totalPortfolioValue)}</p>
         </div>
         <div className={`p-4 rounded-lg shadow text-white ${totalProfitLoss >= 0 ? 'bg-green-600' : 'bg-red-600'}`}>
           <p className="text-sm opacity-90">Ganho/Perda Total</p>
           <p className="text-3xl font-bold">
-            {totalProfitLoss >= 0 ? '+' : ''}R$ {totalProfitLoss}
+            {totalProfitLoss >= 0 ? '+' : ''}{formatCurrency(totalProfitLoss)}
           </p>
         </div>
         <div className="p-4 bg-blue-600 text-white rounded-lg shadow">
@@ -110,10 +130,10 @@ export default function PositionList({ refresh = 0 }: PositionListProps) {
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-primary">
-                  R$ {position.total_value}
+                  {formatCurrency(getPositionValue(position))}
                 </p>
                 <p className={`text-sm font-semibold ${position.profit_loss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {position.profit_loss >= 0 ? '+' : ''}R$ {position.profit_loss}
+                  {position.profit_loss >= 0 ? '+' : ''}{formatCurrency(position.profit_loss)}
                 </p>
               </div>
             </div>
@@ -121,24 +141,24 @@ export default function PositionList({ refresh = 0 }: PositionListProps) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div className="bg-gray-50 p-2 rounded">
                 <p className="text-gray-600 text-xs">Quantidade</p>
-                <p className="font-semibold text-gray-800">{position.quantity}</p>
+                <p className="font-semibold text-gray-800">{formatNumber(position.quantity)}</p>
               </div>
               <div className="bg-gray-50 p-2 rounded">
                 <p className="text-gray-600 text-xs">Preço Médio</p>
                 <p className="font-semibold text-gray-800">
-                  R$ {position.average_price}
+                  {formatCurrency(position.average_price)}
                 </p>
               </div>
               <div className="bg-gray-50 p-2 rounded">
                 <p className="text-gray-600 text-xs">Preço Atual</p>
                 <p className="font-semibold text-gray-800">
-                  R$ {position.current_price}
+                  {formatCurrency(position.current_price)}
                 </p>
               </div>
               <div className="bg-gray-50 p-2 rounded">
                 <p className="text-gray-600 text-xs">Variação</p>
                 <p className={`font-semibold ${position.current_price >= position.average_price ? 'text-green-600' : 'text-red-600'}`}>
-                  {(((position.current_price - position.average_price) / position.average_price) * 100)}%
+                  {formatNumber(((position.current_price - position.average_price) / position.average_price) * 100)}%
                 </p>
               </div>
             </div>

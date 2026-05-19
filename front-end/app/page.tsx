@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Navigation from '@/components/Navigation';
 import AssetList from '@/components/AssetList';
 import CreateOrderModal from '@/components/CreateOrderModal';
+import { useSelectedUser } from '@/lib/useSelectedUser';
 
 interface Asset {
   symbol: string;
@@ -12,6 +13,7 @@ interface Asset {
 }
 
 export default function Home() {
+  const { userId, setUserId } = useSelectedUser();
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [refreshOrders, setRefreshOrders] = useState(0);
@@ -27,7 +29,7 @@ export default function Home() {
 
   return (
     <>
-      <Navigation activeTab="home" />
+      <Navigation activeTab="home" userId={userId} onUserChange={setUserId} />
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">📈 Ativos Disponíveis</h1>
@@ -38,6 +40,7 @@ export default function Home() {
 
         <CreateOrderModal
           asset={selectedAsset}
+          userId={userId}
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           onSuccess={handleOrderSuccess}

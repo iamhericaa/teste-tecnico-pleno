@@ -1,4 +1,4 @@
-// File: C:\Users\heric\OneDrive\Documents\Desafio Tecnico Herica\front-end\app\page.tsx
+// File: C:\Users\heric\Downloads\teste-tecnico-pleno\front-end\app\page.tsx
 import * as entry from '../../../app/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
