@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderType {
+  COMPRA
+  VENDA
+}
+
+enum OrderStatus {
+  PENDENTE
+  PROCESSANDO
+  EXECUTADA
+  REJEITADA
+  CANCELADA
+}
+
+model Asset {
+  symbol         String       @id @db.VarChar(10)
+  name           String       @db.VarChar(100)
+  referencePrice Decimal      @map("reference_price") @db.Decimal(15, 2)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  orders         Order[]
+  positions      Position[]
+  priceCache     PriceCache?
+
+  @@map("assets")
+}
+
+model User {
+  id        String     @id @db.VarChar(50)
+  name      String     @db.VarChar(100)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  orders    Order[]
+  positions Position[]
+
+  @@map("users")
+}
+
+model Position {
+  id           Int      @id @default(autoincrement())
+  userId       String   @map("user_id") @db.VarChar(50)
+  symbol       String   @db.VarChar(10)
+  quantity     Decimal  @default(0) @db.Decimal(15, 8)
+  averagePrice Decimal  @default(0) @map("average_price") @db.Decimal(15, 2)
+  totalValue   Decimal  @default(0) @map("total_value") @db.Decimal(15, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset        Asset    @relation(fields: [symbol], references: [symbol], onDelete: Cascade)
+
+  @@unique([userId, symbol], map: "unique_user_symbol")
+  @@index([userId], map: "idx_positions_user_id")
+  @@map("positions")
+}
+
+model Order {
+  id        Int         @id @default(autoincrement())
+  userId    String      @map("user_id") @db.VarChar(50)
+  symbol    String      @db.VarChar(10)
+  type      OrderType
+  quantity  Decimal     @db.Decimal(15, 8)
+  price     Decimal     @db.Decimal(15, 2)
+  status    OrderStatus @default(PENDENTE)
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset     Asset       @relation(fields: [symbol], references: [symbol], onDelete: Cascade)
+
+  @@index([userId], map: "idx_orders_user_id")
+  @@index([status], map: "idx_orders_status")
+  @@index([symbol], map: "idx_orders_symbol")
+  @@map("orders")
+}
