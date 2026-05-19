@@ -36,3 +36,11 @@ model Order {
 
   @@map("orders")
 }
+
+model Asset {
+  symbol         String  @id
+  name           String
+  referencePrice Decimal @map("reference_price") @db.Decimal(15, 2)
+
+  @@map("assets")
+}

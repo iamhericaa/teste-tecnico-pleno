@@ -15,7 +15,7 @@ export class OrderController {
   }
 
 
-    cancel = async (req: Request, res: Response): Promise<void> => {
+  cancel = async (req: Request, res: Response): Promise<void> => {
     try {
       const orderId = Number(req.params.id);
 
@@ -29,7 +29,7 @@ export class OrderController {
 
       const order = await this.orderService.cancel(orderId);
       if (!order) {
-        logger.warn(`OrderController.cancel - Ordem não encontrada ID: ${orderId}`);
+        logger.info(`OrderController.cancel - Ordem não encontrada ID: ${orderId}`);
         res.status(404).json({ error: "Ordem não encontrada" });
         return;
       }

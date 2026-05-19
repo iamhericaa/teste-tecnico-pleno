@@ -52,14 +52,12 @@ export class SQSService {
 
       const response = await this.sqsClient.send(command);
       
-      logger.info(`✅ [SQS] Mensagem enviada com sucesso! Fila: ${this.queueName}`);
-      logger.debug(`MessageId: ${response.MessageId}`);
+      logger.info(`✅ [SQS] Mensagem enviada com sucesso! MessageId: ${response.MessageId}`);
       logger.debug(`Status HTTP: ${response.$metadata.httpStatusCode}`);
-      logger.debug(`Request ID: ${response.$metadata.requestId}`);
       logger.debug(`Latência: ${response.$metadata.totalRetryDelay}ms`);
 
     } catch (error) {
-      logger.error(`❌ [SQS] Erro ao enviar mensagem para fila ${this.queueName}`, error);
+      logger.error(`[SQS] Erro ao enviar mensagem para fila ${this.queueName}`, error);
       throw error;
     }
   }

@@ -2,7 +2,7 @@ import { PrismaClient, Order as PrismaOrder } from "@prisma/client";
 import { CreateOrderRequest, Order, OrderStatus, UserBalance } from "../types";
 import { BalanceService } from "./BalanceService";
 import { SQSService } from "./SQSService";
-import { logger as Logger} from "./LoggerService";
+import { logger} from "./LoggerService";
 
 const prisma = new PrismaClient();
 
@@ -29,19 +29,19 @@ export class OrderService {
   async createOrder(request: CreateOrderRequest): Promise<{ success: boolean; message: string; orderId?: number; status?: OrderStatus }> {
     const { userId, symbol, type, quantity, price } = request;
 
-    console.log(`[OrderService] Iniciando criação de ordem:`, { userId, symbol, type, quantity, price });
+    logger.info(`[OrderService] Iniciando criação de ordem:`, { userId, symbol, type, quantity, price });
 
     try {
       // 1. Busca saldo do usuário de forma assíncrona
-      console.log(`[OrderService] Buscando saldo para usuário ${userId}...`);
+      logger.info(`[OrderService] Buscando saldo para usuário ${userId}...`);
       const balance = await this.balanceService.getUserBalance(userId);
-      console.log(`[OrderService] Saldo obtido:`, balance);
+      logger.info(`[OrderService] Saldo obtido:`, balance);
 
       // 2. Valida tipo da ordem e saldo
       const validationResult = await this.validateOrder(symbol, type, quantity, price, balance);
 
       if (!validationResult.valid) {
-        console.log(`[OrderService] Validação falhou: ${validationResult.message}`);
+        logger.info(`[OrderService] Validação falhou: ${validationResult.message}`);
         return {
           success: false,
           message: validationResult.message,
@@ -61,10 +61,10 @@ export class OrderService {
         },
       });
 
-      console.log(`[OrderService] Ordem criada com sucesso: ID ${order.id}`);
+      logger.info(`[OrderService] Ordem criada com sucesso: ID ${order.id}`);
 
       // 4. Envia mensagem para SQS de forma assíncrona
-      console.log(`[OrderService] Enviando mensagem para SQS...`);
+      logger.info(`[OrderService] Enviando mensagem para SQS...`);
       await this.sqsService.sendMessage({
         id: order.id,
         user_id: order.userId,
@@ -76,7 +76,7 @@ export class OrderService {
         created_at: order.createdAt,
         updated_at: order.updatedAt,
       });
-      console.log(`[OrderService] Mensagem enviada para SQS com sucesso`);
+      logger.info(`[OrderService] Mensagem enviada para SQS com sucesso`);
 
       return {
         success: true,
@@ -85,7 +85,7 @@ export class OrderService {
         status: order.status as OrderStatus,
       };
     } catch (error: any) {
-      console.error(`[OrderService] Erro ao criar ordem:`, error);
+      logger.error(`[OrderService] Erro ao criar ordem:`, error);
 
       // Se o erro for de ativo não encontrado, retorna mensagem específica
       if (error.message.includes("não encontrado")) {
@@ -135,7 +135,7 @@ export class OrderService {
         };
       }
 
-      console.log(`[OrderService] Validação de compra aprovada. Saldo: R$ ${balance.cash.toFixed(2)}, Necessário: R$ ${totalValue.toFixed(2)}`);
+      logger.info(`[OrderService] Validação de compra aprovada. Saldo: R$ ${balance.cash.toFixed(2)}, Necessário: R$ ${totalValue.toFixed(2)}`);
     } else if (type === "VENDA") {
       // Valida se usuário tem saldo suficiente do ativo para venda
       const assetQuantity = balance.assets[symbol] || 0;
@@ -165,18 +165,18 @@ export class OrderService {
   // getById
   // -------------------------------------------------------------------------
   async getById(orderId: number): Promise<Order | null> {
-    Logger.info("OrderService.getById", "Buscando ordem por ID", { orderId });
+    logger.info("OrderService.getById", "Buscando ordem por ID", { orderId });
 
     const order = await prisma.order.findUnique({
       where: { id: orderId },
     });
 
     if (!order) {
-      Logger.error("OrderService.getById", "Ordem não encontrada", { orderId });
+      logger.error("OrderService.getById", "Ordem não encontrada", { orderId });
       return null;
     }
 
-    Logger.info("OrderService.getById", "Ordem encontrada", {
+    logger.info("OrderService.getById", "Ordem encontrada", {
       orderId,
       status: order.status,
     });
@@ -190,17 +190,17 @@ export class OrderService {
   // cancel
   // -------------------------------------------------------------------------
   async cancel(orderId: number): Promise<Order | null> {
-    Logger.info("OrderService.cancel", "Cancelando ordem", { orderId });
+    logger.info("OrderService.cancel", "Cancelando ordem", { orderId });
 
     const order = await this.getById(orderId);
 
     if (!order) {
-      Logger.error("OrderService.cancel", "Ordem não encontrada", { orderId });
+      logger.error("OrderService.cancel", "Ordem não encontrada", { orderId });
       return null;
     }
 
     if (order.status !== "PENDENTE") {
-      Logger.error(
+      logger.error(
         "OrderService.cancel",
         "Não é possível cancelar ordem com status diferente de PENDENTE",
         { orderId, currentStatus: order.status }
@@ -213,7 +213,7 @@ export class OrderService {
       data: { status: "CANCELADA" },
     });
 
-    Logger.info("OrderService.cancel", "Ordem cancelada com sucesso", { orderId });
+    logger.info("OrderService.cancel", "Ordem cancelada com sucesso", { orderId });
 
     return this.getById(orderId);
   }

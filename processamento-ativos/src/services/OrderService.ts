@@ -1,6 +1,6 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import { logger } from "./LoggerService";
-import { SQSMessage } from "./SQSService";
+import { SQSMessage } from "../types";
 
 const prisma = new PrismaClient();
 

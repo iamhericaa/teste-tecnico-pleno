@@ -23,15 +23,15 @@ export class HttpQuotationSourceStrategy implements QuotationSourceStrategy {
         const duration = Date.now() - start;
 
         if (response.status === 502 && duration > 800) {
-          const err = new Error('Quotes request canceled because 502 response took longer than 800ms');
+          const err = new Error('Request cancelada porque resposta 502 demorou mais que 800ms');
           logger.error(err.message, { status: response.status, duration, url, symbol });
           throw err;
         }
 
         if (response.status === 503 || response.status === 504) {
-          logger.info('Remote service unavailable, will retry if attempts remain', { status: response.status, attempt, url });
+          logger.info('Serviço externo indisponível. Tentando novamente...', { status: response.status, attempt, url });
           if (attempt >= maxAttempts) {
-            lastError = new Error(`Remote service returned ${response.status} after ${attempt} attempts`);
+            lastError = new Error(`Serviço externo retornou: ${response.status} após ${attempt} tentativas`);
             logger.error(lastError.message, { status: response.status, attempt, url });
             break;
           }
@@ -40,7 +40,7 @@ export class HttpQuotationSourceStrategy implements QuotationSourceStrategy {
         }
 
         if (response.status !== 200) {
-          lastError = new Error(`Unexpected status ${response.status} from quote source`);
+          lastError = new Error(`Status inesperado ${response.status} do serviço externo`);
           logger.error(lastError.message, { status: response.status, url, symbol });
           break;
         }
@@ -59,14 +59,14 @@ export class HttpQuotationSourceStrategy implements QuotationSourceStrategy {
             config: axiosErr.config ? { url: axiosErr.config.url, method: axiosErr.config.method } : undefined,
             stack: axiosErr.stack
           };
-          lastError = new Error(axiosErr.message || 'Axios request failed');
-          logger.error('Axios error while fetching quotations', details);
+          lastError = new Error(axiosErr.message || 'Axios request falhou');
+          logger.error('Axios error enquanto busca cotações no serviço externo:', details.message);
 
           const isTimeout = axiosErr.code === 'ECONNABORTED' || axiosErr.message?.includes('timeout');
           if (isTimeout) {
             if (attempt < maxAttempts) {
               const backoff = 1000 * 2 ** (attempt - 1);
-              logger.info('Timeout occurred, retrying with backoff', { attempt, retryAfterMs: backoff, url, symbol, maxAttempts });
+              logger.info('Timeout ocorreu, retentando com backoff', { attempt, retryAfterMs: backoff, url, symbol, maxAttempts });
               await this.delay(backoff);
               continue;
             }
@@ -77,16 +77,16 @@ export class HttpQuotationSourceStrategy implements QuotationSourceStrategy {
           }
         } else {
           lastError = error instanceof Error ? error : new Error('Unknown fetch error');
-          logger.error('Non-Axios fetch error', { message: lastError.message, stack: lastError.stack, url, symbol });
+          logger.error('Erro após enviar a requisição', lastError.message);
         }
 
-        logger.error('Fetch error', { lastError });
+        logger.error('Fetch error', lastError.message);
         break;
       }
     }
 
     logger.error('Failed to fetch quotations after attempts', { lastError, url, symbol });
-    throw lastError ?? new Error('Failed to fetch quotations');
+    throw lastError ?? new Error('Falha desconhecida ao buscar cotações no serviço externo');
   }
 
   private normalizeResponse(payload: any): Quotation | Quotation[] {

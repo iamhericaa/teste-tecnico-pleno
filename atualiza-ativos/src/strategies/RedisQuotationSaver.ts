@@ -15,19 +15,31 @@ export class RedisQuotationSaver implements QuotationSaverStrategy {
 
   async save(quotation: Quotation): Promise<void> {
     await this.connect();
-    const key = `asset:${quotation.symbol}:quotes`;
+    const quotesKey = `asset:${quotation.symbol}:quotes`;
+    const latestKey = `asset:${quotation.symbol}:latest`;
     const payload = {
       ...quotation,
       updated_at: quotation.updated_at ?? new Date().toISOString()
     };
-    await this.client.zAdd(key, [{
-      score: Date.parse(quotation.timestamp),
+
+    logger.info(`[Redis] Salvando asset=${quotation.symbol} price=${quotation.price}`);
+
+    await this.ensureSortedSet(quotesKey);
+    await this.client.zAdd(quotesKey, [{
+      score: Date.parse(String(quotation.timestamp ?? payload.updated_at)),
       value: JSON.stringify(payload),
     }]);
 
-    logger.info(`[Redis] Salvando asset=${quotation.symbol} price=${quotation.price}`);
-    await this.client.set(key, JSON.stringify(payload));
+    await this.client.set(latestKey, JSON.stringify(payload));
     logger.info(`[Redis] Salvo asset=${quotation.symbol} price=${quotation.price} com sucesso.`);
+  }
+
+  private async ensureSortedSet(key: string): Promise<void> {
+    const type = await this.client.type(key);
+    if (type !== 'none' && type !== 'zset') {
+      logger.info(`[Redis] Removendo chave ${key} com tipo incompatível (${type})`);
+      await this.client.del(key);
+    }
   }
 
   private async connect(): Promise<void> {

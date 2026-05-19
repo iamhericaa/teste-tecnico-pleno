@@ -26,13 +26,13 @@ app.post("/orders/:id/cancel", orderController.cancel);
 
 // Start server
 app.listen(PORT, () => {
-  logger.info(`🚀 Servidor iniciado na porta ${PORT}`);
-  logger.info(`📝 Endpoint principal: POST http://localhost:${PORT}/criar-ordens`);
-  logger.info(`🏥 Health check: GET http://localhost:${PORT}/health`);
+  logger.info(`Servidor iniciado na porta ${PORT}`);
+  logger.info(`Endpoint principal: POST http://localhost:${PORT}/criar-ordens`);
+  logger.info(`Health check: GET http://localhost:${PORT}/health`);
 });
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
-  logger.info("🛑 Recebido sinal de interrupção. Encerrando servidor...");
+  logger.info("Recebido sinal de interrupção. Encerrando servidor...");
   process.exit(0);
 });
