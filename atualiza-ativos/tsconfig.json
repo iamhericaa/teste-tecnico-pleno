@@ -10,7 +10,8 @@
     "moduleResolution": "node16",
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node"]
+    "types": ["node", "jest"],
+    "isolatedModules": true
   },
   "include": ["src"]
 }
