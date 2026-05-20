@@ -298,7 +298,7 @@ Para integrar com autenticação real:
 - Verifique `lib/api.ts` está correto
 
 ### Ordem não aparece na lista
-- Clique botão "🔄 Atualizar"
+- Clique botão "Atualizar"
 - Verifique console do navegador para erros
 
 ### Estilos não carregam (tudo cinza)

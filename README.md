@@ -1,6 +1,6 @@
-# Sistema de Ordens de Ativos — Documentação Técnica
+# Sistema de Ordens de Ativos
 
-> Plataforma distribuída de compra e venda de ativos financeiros, construída com arquitetura orientada a eventos na AWS. O sistema garante atomicidade no processamento de ordens, resiliência por cache-aside e observabilidade orientada à jornada do cliente.
+Sistema para criação, processamento e consulta de ordens de compra e venda de ativos. A solução separa leitura, criação de ordens, processamento assíncrono e atualização de cotações, usando MySQL, Redis e SQS para simular um ambiente distribuído.
 
 ---
 
@@ -12,7 +12,7 @@
 4. [Design Patterns](#design-patterns)
 5. [Fluxo de Compra e Venda](#fluxo-de-compra-e-venda)
 6. [Testes](#testes)
-7. [Observabilidade e Dashboards](#observabilidade-e-dashboards)
+7. [Observabilidade e Dashboards](#observabilidade-e-dashboards-propostos)
 8. [SLOs e Error Budget](#slos-e-error-budget)
 9. [Como Rodar Localmente](#como-rodar-localmente)
 
@@ -20,14 +20,14 @@
 
 ## Visão Geral
 
-O sistema processa ordens de compra e venda de ativos financeiros em ambiente de mercado. A arquitetura separa responsabilidades em quatro serviços independentes, cada um com ciclo de vida e critério de escala próprios.
+O sistema processa ordens de compra e venda de ativos financeiros. A arquitetura separa responsabilidades em quatro serviços, cada um com um papel claro no fluxo da ordem.
 
 **Decisões arquiteturais principais:**
 
-- **Ordens assíncronas via SQS** — a API responde imediatamente com `PENDENTE`; o processamento ocorre em Lambda descoberta pela fila, sem bloquear o cliente.
-- **Cache-aside com Redis** — cotações e posições são servidas via ElastiCache com fallback automático para o banco relacional, reduzindo latência de leitura.
+- **Ordens assíncronas via SQS** — a API responde com `PENDENTE`; o processamento ocorre em uma Lambda acionada pela fila.
+- **Cache-aside com Redis** — cotações e posições são buscadas primeiro no Redis; em caso de falha, a leitura cai para o banco relacional.
 - **Idempotência por atomic claim** — o processador usa `updateMany` atômico para evitar execução duplicada em re-entregas do SQS.
-- **Horário comercial isolado** — `criar-ordens-api` sobe apenas em horário de pregão; `leitura-ativos` permanece 24/7.
+- **Horário comercial isolado** — `criar-ordens-api` pode ser executado apenas em horário comercial; `leitura-ativos` permanece disponível para consultas.
 
 ---
 
@@ -61,8 +61,8 @@ atualiza-ativos (Worker ECS)
 | Fila de mensagens | Amazon SQS |
 | Cache | ElastiCache (Redis) |
 | Banco relacional | RDS (MySQL via Prisma) |
-| Observabilidade | CloudWatch, X-Ray, OpenTelemetry |
-| Alertas | CloudWatch Alarms + SNS/Slack |
+| Observabilidade proposta | CloudWatch, Datadog |
+| Alertas propostos | CloudWatch Alarms + Datadog |
 
 ---
 
@@ -70,7 +70,7 @@ atualiza-ativos (Worker ECS)
 
 ### `leitura-ativos` — API de Leitura (ECS 24/7)
 
-Serve cotações, ordens e posições. Primeira camada é sempre o Redis; falha silenciosa aciona fallback para o banco.
+Serve cotações, ordens e posições. A primeira tentativa de leitura é feita no Redis; se o cache falhar, o serviço consulta o banco (fallback).
 
 ```
 GET /                       health check
@@ -104,7 +104,7 @@ PositionController
 
 ### `criar-ordens-api` — API de Criação (ECS horário comercial)
 
-Valida, persiste e enfileira ordens. Retorna `201` com `status: PENDENTE` imediatamente após enfileirar no SQS.
+Valida, persiste e enfileira ordens. Retorna `201` com `status: PENDENTE` depois que a ordem é salva e publicada no SQS.
 
 ```
 GET  /health
@@ -122,15 +122,15 @@ POST /orders/:id/cancel   cancela uma ordem
 6. `SQSService.send()` publica mensagem na fila `orders-queue`.
 7. Retorna `{ success: true, orderId, status: "PENDENTE" }`.
 
-> Comandos SQL atômicos garantem que não haja venda de ativo sem estoque.
+> A validação da posição e o decremento atômico reduzem o risco de vender mais ativos do que o usuário possui.
 
 ---
 
 ### `processamento-ativos` — Lambda (acionada via SQS)
 
-Executa ou rejeita ordens. Garante exatamente-uma-execução por atomic claim.
+Executa ou rejeita ordens. Como o SQS pode entregar a mesma mensagem mais de uma vez, o serviço usa uma transição atômica de status para evitar efeitos duplicados.
 
-**Mensagens aceitas:** `PENDENTE` e `CANCELADA`. Qualquer outro status é descartado silenciosamente.
+**Mensagens aceitas:** `PENDENTE` e `CANCELADA`. Qualquer outro status é ignorado e pode ser registrado em log para investigação.
 
 **Atomic claim (idempotência):**
 ```
@@ -153,7 +153,7 @@ PROCESSANDO → EXECUTADA   (sucesso)
 PROCESSANDO → REJEITADA   (saldo/posição insuficiente ou erro)
 ```
 
-Toda mutação ocorre dentro de uma `prisma.$transaction` — sem estado parcial em caso de falha.
+As mudanças de status e posição acontecem dentro de uma `prisma.$transaction`, evitando atualização parcial quando ocorre erro no processamento.
 
 ---
 
@@ -166,13 +166,13 @@ Consome cotações de serviço externo e atualiza Redis + banco de forma contín
 - `HttpQuotationSourceStrategy` — busca cotação via HTTP externo com retry e backoff.
 - `RedisQuotationSaver` — persiste no cache.
 - `DbQuotationSaver` — persiste histórico no banco.
-- `CompositeQuotationSaver` — executa Redis + banco como uma única operação.
+- `CompositeQuotationSaver` — agrupa persistência em Redis e banco atrás da mesma interface.
 
 ---
 
 ## Design Patterns
 
-O projeto aplica uma combinação de padrões GoF clássicos e padrões arquiteturais distribuídos.
+Algumas decisões de implementação seguem padrões conhecidos. A lista abaixo mostra onde eles aparecem no projeto, sem tratar os padrões como objetivo por si só.
 
 ### Padrões GoF
 
@@ -180,9 +180,9 @@ O projeto aplica uma combinação de padrões GoF clássicos e padrões arquitet
 |---|---|---|
 | **Strategy** | `atualiza-ativos` — `QuotationSourceStrategy`, `QuotationSaverStrategy` | Permite trocar fonte ou destino de cotação sem alterar o processador |
 | **Factory** | `QuotationSourceFactory`, `QuotationSaverFactory` | Centraliza criação das estratégias, evita `new` espalhado |
-| **Composite** | `CompositeQuotationSaver` | Trata Redis + DB como um único saver, transparente para quem usa |
-| **Adapter** | `QuotationService` — conversão Prisma → API, Redis → domínio | Cada camada recebe dados no formato esperado independente da origem |
-| **Facade** | `api.ts` no front-end; services no backend | Esconde Axios, URLs e detalhes de SQS/Prisma/Redis dos consumidores |
+| **Composite** | `CompositeQuotationSaver` | Agrupa múltiplos destinos de persistência em um único saver |
+| **Adapter** | `QuotationService` — conversão Prisma → API, Redis → domínio | Normaliza dados vindos de fontes diferentes |
+| **Facade** | `api.ts` no front-end; services no backend | Concentra chamadas externas e detalhes de infraestrutura |
 | **Singleton** | `prisma.ts`, `redis.ts`, `Logger.ts` | Evita múltiplas conexões; centraliza recursos globais |
 
 ### Padrões Arquiteturais e de Resiliência
@@ -194,9 +194,9 @@ O projeto aplica uma combinação de padrões GoF clássicos e padrões arquitet
 | **Producer / Consumer** | `criar-ordens-api` (producer) + Lambda (consumer) | Desacopla criação do processamento; API responde rápido |
 | **Idempotent Consumer** | `processamento-ativos` — atomic claim via `updateMany` | SQS pode re-entregar; evita execução duplicada da mesma ordem |
 | **Unit of Work** | `prisma.$transaction` no processamento | Mudanças de status e posição acontecem juntas ou não acontecem |
-| **Cache-Aside / Fallback** | `QuotationService` — Redis → MySQL | Acelera leitura; banco é fallback automático quando cache indisponível |
+| **Cache-Aside / Fallback** | `QuotationService` — Redis → MySQL | Usa cache para leitura rápida e banco como fallback |
 | **State Machine** | Ordens: `PENDENTE → PROCESSANDO → EXECUTADA / REJEITADA / CANCELADA` | Controla quais transições são permitidas; impede estados inválidos |
-| **Retry com Backoff** | `HttpQuotationSourceStrategy`, `OrderService` | Resiliência contra falhas temporárias de rede ou banco |
+| **Retry com Backoff** | `HttpQuotationSourceStrategy`, `OrderService` | Trata falhas temporárias de rede ou banco |
 
 ---
 
@@ -268,14 +268,16 @@ flowchart TD
 
 ## Testes
 
-### Testes de Performance
+### Testes de Performance - Propostos
+
+Os cenários abaixo são referências para validar comportamento sob carga em um ambiente provisionado para isso.
 
 | Cenário | Descrição | Objetivo |
 |---|---|---|
-| **Rampa gradual** | 0 → 50.000 usuários em 20 min, sustentado por 30 min | Verificar comportamento sob carga crescente |
-| **Stress Test** | 0 → 75.000 usuários em menos de 5 min | Simular aumento brusco de demanda |
+| **Rampa gradual** | Aumento progressivo de usuários por 20 min, sustentado por 30 min | Verificar comportamento sob carga crescente |
+| **Stress Test** | Aumento rápido de demanda em poucos minutos | Simular aumento brusco de uso |
 | **Soak Test** | Carga sustentada por 4 horas | Detectar vazamento de memória e degradação acumulada |
-| **Spike Test** | Picos de 100.000 clientes | Simular abertura de mercado e verificar recuperação pós-pico |
+| **Spike Test** | Picos curtos de requisições | Simular abertura de mercado e verificar recuperação pós-pico |
 
 ---
 
@@ -304,9 +306,9 @@ flowchart TD
 
 ---
 
-### Testes Sintéticos (Monitoramento Contínuo)
+### Testes Sintéticos Propostos
 
-Executados automaticamente após cada deploy para garantir que o sistema está operacional em produção.
+Podem ser executados após cada deploy para validar se os principais fluxos continuam funcionando.
 
 **`atualiza-ativos`:**
 1. Deploy sobe
@@ -342,9 +344,9 @@ Executados automaticamente após cada deploy para garantir que o sistema está o
 
 ---
 
-## Observabilidade e Dashboards
+## Observabilidade e Dashboards - Propostas
 
-A estratégia de observabilidade é orientada à **jornada da ordem**, não apenas à infraestrutura. Existem quatro visões complementares.
+A observabilidade acompanha a ordem desde a criação até o processamento final. Abaixo estão quatro visões úteis para produção.
 
 ---
 
@@ -464,7 +466,7 @@ Compara métricas antes e depois de cada deploy, com anotação automática no g
 | Latência p95 | 192ms | 187ms |
 | Rollback | — | disponível |
 
-Se qualquer métrica crítica piorar significativamente após o deploy, o rollback é acionado automaticamente.
+Se uma métrica crítica piorar significativamente após o deploy, o dashboard deve facilitar a decisão de rollback.
 
 ---
 
@@ -492,7 +494,7 @@ Se qualquer métrica crítica piorar significativamente após o deploy, o rollba
 
 ### Stack de Observabilidade
 
-**AWS (produção):**
+**AWS (produção sugerida):**
 CloudWatch Dashboards · CloudWatch Alarms · X-Ray / OpenTelemetry · SQS Metrics · ECS / Lambda Metrics · RDS Metrics · ElastiCache Metrics · SNS ou Slack para alertas
 
 **Local / demo:**
@@ -501,8 +503,6 @@ Prometheus · Grafana · OpenTelemetry · Jaeger · Loki
 ---
 
 ## SLOs e Error Budget
-
-> "O error budget evita uma visão binária de disponibilidade. Em vez de reagir só quando quebra, ele mostra quanto risco operacional ainda podemos assumir antes de priorizar estabilidade sobre novas entregas."
 
 O error budget é a margem de falha permitida pelo SLO. Se o SLO é 99,9% de criações com sucesso em um mês com 1.000.000 requisições, o budget é de 1.000 falhas permitidas.
 
@@ -557,57 +557,5 @@ npm run dev
 - Redis
 - LocalStack (emulação de SQS para ambiente de desenvolvimento)
 
----
-```mermaid
-flowchart TD
-    usuario[Cliente / Front-end]
 
-    subgraph aws[AWS]
-        subgraph ecs24[ECS - APIs e Workers]
-            leitura[leitura-ativos API\nECS 24/7]
-            criar[criar-ordens-api\nECS em horario comercial]
-            atualiza[atualiza-ativos\nWorker ECS]
-        end
-
-        sqs[Amazon SQS\nFila de ordens pendentes]
-        lambda[processamento-ativos\nAWS Lambda acionada via SQS]
-        redis[(Redis / ElastiCache)]
-        banco[(Banco de dados)]
-        mercado[Servico externo de cotacoes / mercado]
-    end
-
-    usuario -->|Consulta ativos, posicao e status| leitura
-    leitura -->|Busca cache| redis
-    leitura -->|Fallback / dados persistidos| banco
-
-    atualiza -->|Consulta cotacoes| mercado
-    atualiza -->|Atualiza cotacoes em cache| redis
-    atualiza -->|Persiste historico / ultima cotacao| banco
-
-    usuario -->|Envia ordem de COMPRA ou VENDA| criar
-    criar -->|Valida horario comercial, ativo, usuario e payload| banco
-    criar -->|Cria ordem com status PENDENTE| banco
-    criar -->|Publica ordem PENDENTE| sqs
-
-    sqs -->|Trigger por mensagem| lambda
-    lambda -->|Carrega ordem, saldo, posicao e cotacao| banco
-    lambda -->|Consulta cotacao/cache quando necessario| redis
-
-    lambda --> decisao{Tipo de ordem}
-    decisao -->|COMPRA| validaCompra{Saldo suficiente?}
-    decisao -->|VENDA| validaVenda{Posicao suficiente?}
-
-    validaCompra -->|Sim| executa[Executa ordem]
-    validaCompra -->|Nao| rejeita[Rejeita ordem]
-    validaVenda -->|Sim| executa
-    validaVenda -->|Nao| rejeita
-
-    executa -->|Atualiza status EXECUTADO,\nsaldo e posicao| banco
-    executa -->|Atualiza cache de status/posicao| redis
-    rejeita -->|Atualiza status REJEITADO\ncom motivo| banco
-    rejeita -->|Atualiza cache de status| redis
-
-    usuario -->|Consulta status da ordem| leitura
-```
-
-*Documentação gerada para apresentação técnica. Última atualização: maio de 2026.*
+*Última atualização: maio de 2026.*

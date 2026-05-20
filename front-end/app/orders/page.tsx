@@ -22,7 +22,7 @@ export default function OrdersPage() {
             onClick={() => setRefresh(prev => prev + 1)}
             className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-green-600 font-semibold transition"
           >
-            🔄 Atualizar
+            Atualizar
           </button>
         </div>
 
