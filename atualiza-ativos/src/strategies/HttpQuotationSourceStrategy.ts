@@ -94,6 +94,10 @@ export class HttpQuotationSourceStrategy implements QuotationSourceStrategy {
       return payload.data.map((item: any) => this.normalizeQuotation(item, payload.timestamp));
     }
 
+    if (payload && payload.data && typeof payload.data === 'object') {
+      return this.normalizeQuotation(payload.data, payload.timestamp);
+    }
+
     if (Array.isArray(payload)) {
       return payload.map((item) => this.normalizeQuotation(item));
     }

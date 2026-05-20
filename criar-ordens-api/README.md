@@ -1,96 +1,85 @@
-# Criar Ordens API
+# criar-ordens-api
 
-API para criação de ordens de investimento com processamento assíncrono.
+API em TypeScript/Express responsavel por receber ordens de compra e venda, validar dados iniciais, criar a ordem no MySQL e publicar a mensagem no SQS para processamento assincrono.
 
-## Funcionalidades
+## O que este projeto faz
 
-- **POST /criar-ordens**: Cria uma nova ordem de investimento
-  - Busca saldo do usuário de forma assíncrona (mock)
-  - Valida tipo da ordem (COMPRA ou VENDA)
-  - Para COMPRA: valida se usuário tem saldo em dinheiro suficiente
-  - Para VENDA: valida se usuário tem saldo do ativo suficiente
-  - Utiliza o preço informado no payload (sem validação contra cotação de mercado)
-  - Cria ordem no banco de dados com status PENDENTE
-  - Envia mensagem para SQS com os dados da ordem
+- Expoe endpoint para criacao de ordens.
+- Valida payload obrigatorio, tipo da ordem e valores positivos.
+- Consulta saldo mockado do usuario antes de aceitar a ordem.
+- Para compra, valida dinheiro disponivel.
+- Para venda, valida quantidade do ativo disponivel no mock.
+- Cria ordens `PENDENTE` ou `REJEITADA` no MySQL.
+- Publica ordens pendentes na fila SQS `orders-queue`.
+- Permite cancelar ordens pelo endpoint de cancelamento.
 
-## Pré-requisitos
+## Como executar com o ambiente completo
 
-1. **Inicie o banco MySQL via Docker** (usando o docker-compose do leitura-ativos):
+Na raiz do repositorio:
+
 ```bash
-cd ../leitura-ativos
-docker-compose up -d
+docker compose up -d --build
 ```
 
-2. **Aguarde o banco estar pronto** (cerca de 10-30 segundos)
+A API fica disponivel em:
 
-## Instalação
+```text
+http://localhost:62001
+```
+
+Health check:
+
+```bash
+curl http://localhost:62001/health
+```
+
+Logs:
+
+```bash
+docker compose logs -f api-criar-ordens
+```
+
+## Como executar localmente
+
+Suba MySQL e LocalStack pela raiz do repositorio ou use o `docker compose` completo. Depois:
 
 ```bash
 cd criar-ordens-api
 npm install
-
-# O arquivo .env já está configurado com as credenciais do Docker
-# Se precisar alterar, edite o arquivo .env
-
-# Gere o cliente Prisma
 npm run prisma:generate
-
-# Opção 1: Usando usuário root para migrations (tem permissões)
-DATABASE_URL="mysql://root:rootpassword@localhost:3306/investment_orders" npm run prisma:migrate
-
-# Ou Opção 2: Se já tiver as tabelas criadas no leitura-ativos, só precisa gerar o cliente
-# npm run prisma:generate já é suficiente
-```
-
-## Execução
-
-### 🐳 Modo Docker (Recomendado)
-Inicia MySQL e a API em containers:
-
-```bash
-# Build e inicia os containers
-docker-compose up -d --build
-
-# Acompanhar os logs
-docker-compose logs -f api
-
-# Para parar os containers
-docker-compose down
-```
-
-A API estará disponível em: `http://localhost:62001`
-
-### Modo Desenvolvimento (local)
-```bash
-# Altere o DATABASE_URL no .env para @localhost
-# DATABASE_URL="mysql://app_user:app_password@localhost:3306/investment_orders"
-
 npm run dev
 ```
 
-### Modo Produção
-```bash
-npm run build
-npm start
+Variaveis principais:
+
+```env
+PORT=62001
+DATABASE_URL=mysql://app_user:app_password@localhost:3306/investment_orders
+SQS_QUEUE_NAME=orders-queue
+SQS_ENDPOINT=http://localhost:4566
+AWS_REGION=sa-east-1
+AWS_ACCESS_KEY_ID=teste
+AWS_SECRET_ACCESS_KEY=teste
 ```
 
 ## Endpoints
 
-### POST /criar-ordens
-Cria uma nova ordem de investimento.
+### GET /health
 
-**Request Body:**
-```json
-{
-  "userId": "user-001",
-  "symbol": "ITUB4",
-  "type": "COMPRA",
-  "quantity": 10,
-  "price": 32.80
-}
+```bash
+curl http://localhost:62001/health
 ```
 
-**Response (Sucesso):**
+### POST /criar-ordens
+
+```bash
+curl -X POST http://localhost:62001/criar-ordens \
+  -H "Content-Type: application/json" \
+  -d "{\"userId\":\"user-001\",\"symbol\":\"ITUB4\",\"type\":\"COMPRA\",\"quantity\":10,\"price\":32.8}"
+```
+
+Resposta de sucesso:
+
 ```json
 {
   "success": true,
@@ -100,118 +89,89 @@ Cria uma nova ordem de investimento.
 }
 ```
 
-**Response (Erro - Saldo Insuficiente):**
+Resposta de validacao:
+
 ```json
 {
   "success": false,
-  "message": "Saldo insuficiente para compra. Necessário: R$ 5000.00",
+  "message": "Saldo insuficiente para compra. Necessario: R$ 5000.00",
   "status": "REJEITADA"
 }
 ```
 
-**Response (Erro - Saldo do Ativo Insuficiente):**
-```json
-{
-  "success": false,
-  "message": "Saldo insuficiente do ativo ITUB4 para venda. Necessário: 200",
-  "status": "REJEITADA"
-}
+### POST /orders/:id/cancel
+
+```bash
+curl -X POST http://localhost:62001/orders/1/cancel
 ```
 
-### GET /ordens/:id
-Busca uma ordem por ID.
+## Usuarios mockados
 
-**Response:**
-```json
-{
-  "id": 1,
-  "user_id": "user-001",
-  "symbol": "ITUB4",
-  "type": "COMPRA",
-  "quantity": 10,
-  "price": 32.80,
-  "status": "PENDENTE",
-  "created_at": "2026-04-28T21:00:00.000Z",
-  "updated_at": "2026-04-28T21:00:00.000Z"
-}
+| Usuario | Dinheiro | Ativos |
+| --- | ---: | --- |
+| `user-001` | 10000.00 | `ITUB4: 100`, `USDC: 50`, `PETR4: 200` |
+| `user-002` | 5000.00 | `BTC: 0.1`, `ETH: 2.5` |
+| `user-003` | 500.00 | `VALE3: 10` |
+
+## Scripts
+
+```bash
+npm run dev             # executa em desenvolvimento
+npm run build           # compila TypeScript
+npm start               # executa dist/index.js
+npm test                # roda testes Jest
+npm run test:coverage   # roda testes com cobertura
+npm run prisma:generate # gera Prisma Client
+npm run prisma:migrate  # roda migrations em desenvolvimento
+npm run prisma:studio   # abre Prisma Studio
 ```
 
-### GET /ordens?userId=user-001
-Lista ordens de um usuário.
+## Testes
 
-**Response:**
-```json
-[
-  {
-    "id": 1,
-    "user_id": "user-001",
-    "symbol": "ITUB4",
-    "type": "COMPRA",
-    "quantity": 10,
-    "price": 32.80,
-    "status": "PENDENTE",
-    "created_at": "2026-04-28T21:00:00.000Z",
-    "updated_at": "2026-04-28T21:00:00.000Z"
-  }
-]
+```bash
+cd criar-ordens-api
+npm test
 ```
 
-### GET /health
-Health check da API.
+Os testes cobrem:
 
-**Response:**
-```json
-{
-  "status": "OK",
-  "timestamp": "2026-04-28T21:00:00.000Z"
-}
+- `OrderController`;
+- validacoes de ordem;
+- `OrderService`;
+- `BalanceService`;
+- `QuotationService`;
+- publicacao no SQS;
+- integracao da API Express.
+
+## Padroes e decisões importantes
+
+- Layered Architecture: controller trata HTTP; services concentram regras de negocio e integracoes.
+- Producer/Consumer: a API apenas cria e publica a ordem; a execucao real ocorre no `processamento-ativos`.
+- Dependency Injection simples: controllers recebem services no construtor, facilitando testes.
+- Fail fast no controller: payload invalido nem chega ao fluxo de persistencia.
+- Processamento assincrono: melhora tempo de resposta e desacopla criacao de execucao.
+- Status de dominio: a ordem nasce `PENDENTE`, pode ser `REJEITADA`, `CANCELADA` ou depois `EXECUTADA`.
+
+## Estrutura principal
+
+```text
+src/
+  app.ts                         # configura Express, CORS, rotas e logging HTTP
+  index.ts                       # inicia servidor
+  controllers/OrderController.ts # camada HTTP
+  services/OrderService.ts       # regra de criacao/cancelamento
+  services/BalanceService.ts     # saldo mockado para validacao
+  services/SQSService.ts         # publicacao na fila
+  types/                         # contratos e tipos da API
+prisma/
+  schema.prisma                  # schema compartilhado de banco
 ```
 
-## Mock de Dados
+## Pontos de atencao
 
-### Usuários e Saldos
+- O saldo usado na criacao e mockado, suficiente para demonstrar validacao de negocio.
+- A ordem pendente e enviada ao SQS, entao o status final deve ser consultado na API `leitura-ativos`.
+- LocalStack simula SQS localmente no `docker-compose.yml`.
 
-| Usuário | Saldo em Dinheiro | Ativos |
-|---------|-------------------|--------|
-| user-001 | R$ 10.000,00 | ITUB4: 100, USDC: 50, PETR4: 200 |
-| user-002 | R$ 5.000,00 | BTC: 0.1, ETH: 2.5 |
-| user-003 | R$ 500,00 | VALE3: 10 |
 
-### Ativos e Preços
-
-| Símbolo | Preço |
-|---------|-------|
-| ITUB4 | R$ 32,80 |
-| ITUB3 | R$ 15,40 |
-| USDC | R$ 5,50 |
-| SOL | R$ 418,07 |
-| BTC | R$ 350.000,00 |
-| ETH | R$ 18.500,00 |
-| PETR4 | R$ 38,50 |
-| VALE3 | R$ 68,90 |
-
-## Fluxo de Processamento
-
-1. **Recebimento da requisição**: Validação inicial dos campos obrigatórios
-2. **Busca de saldo**: Consulta assíncrona do saldo do usuário
-3. **Validação**:
-   - COMPRA: Verifica se `saldo_em_dinheiro >= quantidade * preco`
-   - VENDA: Verifica se `saldo_do_ativo >= quantidade`
-4. **Criação da ordem**: Se validação passar, cria ordem com status `PENDENTE`
-5. **Envio para SQS**: Envia mensagem com dados da ordem para fila
-
-## Variáveis de Ambiente
-
-| Variável | Descrição | Exemplo |
-|----------|-----------|--------|
-| PORT | Porta do servidor | 62001 |
-| DATABASE_URL | URL de conexão com o banco (Prisma) | mysql://app_user:app_password@localhost:3306/investment_orders |
-| SQS_QUEUE_NAME | Nome da fila SQS | orders-queue |
-
-## Tecnologias
-
-- **Node.js** + **TypeScript**
-- **Express** - Framework HTTP
-- **Prisma** - ORM para banco de dados
-- **MySQL** - Banco de dados
-- **AWS SDK** - Cliente SQS (mock)
+*Última atualização: 20 maio de 2026.*

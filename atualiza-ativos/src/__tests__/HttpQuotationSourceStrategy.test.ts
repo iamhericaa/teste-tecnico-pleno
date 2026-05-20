@@ -60,6 +60,24 @@ describe('HttpQuotationSourceStrategy', () => {
     expect(mockedAxios.get).toHaveBeenCalledWith('http://quotes.test/quotations/VALE3', expect.any(Object));
   });
 
+  it('should fetch and normalize a single symbol from a data envelope', async () => {
+    mockedAxios.get.mockResolvedValue({
+      status: 200,
+      data: {
+        timestamp: '2026-05-18T10:00:00.000Z',
+        data: { symbol: ' ITUB4 ', price: '32.80', name: ' Itau Unibanco PN ' }
+      }
+    });
+
+    await expect(new HttpQuotationSourceStrategy().fetch('ITUB4')).resolves.toEqual({
+      symbol: 'ITUB4',
+      price: 32.8,
+      name: 'Itau Unibanco PN',
+      timestamp: '2026-05-18T10:00:00.000Z'
+    });
+    expect(mockedAxios.get).toHaveBeenCalledWith('http://localhost:3001/quotations/ITUB4', expect.any(Object));
+  });
+
   it('should normalize array payloads', async () => {
     mockedAxios.get.mockResolvedValue({
       status: 200,

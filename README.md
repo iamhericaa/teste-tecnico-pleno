@@ -61,8 +61,8 @@ atualiza-ativos (Worker ECS)
 | Fila de mensagens | Amazon SQS |
 | Cache | ElastiCache (Redis) |
 | Banco relacional | RDS (MySQL via Prisma) |
-| Observabilidade | CloudWatch, Datadog |
-| Alertas | CloudWatch Alarms + Datadog |
+| Observabilidade | CloudWatch, X-Ray, OpenTelemetry |
+| Alertas | CloudWatch Alarms + SNS/Slack |
 
 ---
 
@@ -493,10 +493,10 @@ Se qualquer métrica crítica piorar significativamente após o deploy, o rollba
 ### Stack de Observabilidade
 
 **AWS (produção):**
-CloudWatch Alarms · SQS Metrics · ECS / Lambda Metrics · RDS Metrics · ElastiCache Metrics · Datadog
+CloudWatch Dashboards · CloudWatch Alarms · X-Ray / OpenTelemetry · SQS Metrics · ECS / Lambda Metrics · RDS Metrics · ElastiCache Metrics · SNS ou Slack para alertas
 
 **Local / demo:**
-Docker Logs
+Prometheus · Grafana · OpenTelemetry · Jaeger · Loki
 
 ---
 
@@ -558,5 +558,56 @@ npm run dev
 - LocalStack (emulação de SQS para ambiente de desenvolvimento)
 
 ---
+```mermaid
+flowchart TD
+    usuario[Cliente / Front-end]
 
-*Última atualização: 20 maio de 2026.*
+    subgraph aws[AWS]
+        subgraph ecs24[ECS - APIs e Workers]
+            leitura[leitura-ativos API\nECS 24/7]
+            criar[criar-ordens-api\nECS em horario comercial]
+            atualiza[atualiza-ativos\nWorker ECS]
+        end
+
+        sqs[Amazon SQS\nFila de ordens pendentes]
+        lambda[processamento-ativos\nAWS Lambda acionada via SQS]
+        redis[(Redis / ElastiCache)]
+        banco[(Banco de dados)]
+        mercado[Servico externo de cotacoes / mercado]
+    end
+
+    usuario -->|Consulta ativos, posicao e status| leitura
+    leitura -->|Busca cache| redis
+    leitura -->|Fallback / dados persistidos| banco
+
+    atualiza -->|Consulta cotacoes| mercado
+    atualiza -->|Atualiza cotacoes em cache| redis
+    atualiza -->|Persiste historico / ultima cotacao| banco
+
+    usuario -->|Envia ordem de COMPRA ou VENDA| criar
+    criar -->|Valida horario comercial, ativo, usuario e payload| banco
+    criar -->|Cria ordem com status PENDENTE| banco
+    criar -->|Publica ordem PENDENTE| sqs
+
+    sqs -->|Trigger por mensagem| lambda
+    lambda -->|Carrega ordem, saldo, posicao e cotacao| banco
+    lambda -->|Consulta cotacao/cache quando necessario| redis
+
+    lambda --> decisao{Tipo de ordem}
+    decisao -->|COMPRA| validaCompra{Saldo suficiente?}
+    decisao -->|VENDA| validaVenda{Posicao suficiente?}
+
+    validaCompra -->|Sim| executa[Executa ordem]
+    validaCompra -->|Nao| rejeita[Rejeita ordem]
+    validaVenda -->|Sim| executa
+    validaVenda -->|Nao| rejeita
+
+    executa -->|Atualiza status EXECUTADO,\nsaldo e posicao| banco
+    executa -->|Atualiza cache de status/posicao| redis
+    rejeita -->|Atualiza status REJEITADO\ncom motivo| banco
+    rejeita -->|Atualiza cache de status| redis
+
+    usuario -->|Consulta status da ordem| leitura
+```
+
+*Documentação gerada para apresentação técnica. Última atualização: maio de 2026.*

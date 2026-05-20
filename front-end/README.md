@@ -1,249 +1,137 @@
-# 🎨 Frontend — Investment Orders
+# front-end
 
-Frontend responsivo em Next.js com integração completa ao backend em TypeScript.
+Aplicacao web em Next.js para consultar ativos, criar ordens, cancelar ordens pendentes e visualizar a carteira de um usuario.
 
-## 🚀 Características
+## O que este projeto faz
 
-- ✅ **Lista de Ativos** — Visualiza todos os ativos com preço atual
-- ✅ **Criar Ordem** — Modal para criar ordens de compra/venda
-- ✅ **Lista de Ordens** — Histórico de ordens com status e ações
-- ✅ **Carteira** — Posição consolidada com análise de rentabilidade
-- ✅ **Design Verde & Branco** — Interface moderna com Tailwind CSS
-- ✅ **Totalmente Responsiva** — Funciona em desktop, tablet e mobile
+- Lista cotacoes vindas da API `leitura-ativos`.
+- Abre modal para criar ordem de compra ou venda.
+- Envia a criacao de ordem para `criar-ordens-api`.
+- Lista ordens do usuario selecionado.
+- Permite cancelar ordens pendentes.
+- Mostra posicoes da carteira com preco medio, preco atual e lucro/prejuizo.
+- Permite alternar entre usuarios mockados: `user-001`, `user-002` e `user-003`.
 
-## 📋 Funcionalidades
+## Como executar com o ambiente completo
 
-### 1. Página Inicial - Ativos Disponíveis
-- Lista todos os ativos do sistema
-- Exibe preço atual de cada ativo
-- Botão para criar ordem diretamente
-- Grid responsivo (1 coluna mobile, 3 colunas desktop)
+Primeiro suba os backends na raiz do repositorio:
 
-### 2. Modal de Criação de Ordem
-- Seleção de tipo (Compra/Venda)
-- Entrada de quantidade e preço
-- Cálculo automático do valor total
-- Validações em tempo real
-- Feedback de sucesso/erro
+```bash
+docker compose up -d --build
+```
 
-### 3. Página de Ordens
-- Lista todas as ordens do usuário
-- Exibe status com cores diferentes
-- Ícones para tipo de ordem (compra/venda)
-- Botão para cancelar ordens pendentes
-- Atualização manual com botão refresh
-
-### 4. Página de Carteira
-- Cards de resumo (valor total, ganho/perda, quantidade de ativos)
-- Lista completa de posições ativas
-- Quantidade, preço médio e preço atual
-- Cálculo de ganho/perda por ativo
-- Variação percentual
-
-## 🛠️ Stack Tecnológico
-
-- **Next.js 14** — Framework React
-- **TypeScript** — Type safety
-- **Tailwind CSS** — Styling
-- **Axios** — HTTP client
-- **App Router** — Roteamento moderno
-
-## 📦 Instalação
-
-### Pré-requisitos
-- Node.js 18+
-- npm ou yarn
-
-### Passos
+Depois execute o front-end:
 
 ```bash
 cd front-end
 npm install
-```
-
-## 🚀 Execução
-
-### Desenvolvimento
-```bash
 npm run dev
 ```
 
-Acesse: `http://localhost:3000`
+Acesse:
 
-### Build para produção
-```bash
-npm run build
-npm start
+```text
+http://localhost:3000
 ```
 
-## 🔌 Integração com Backend
+## Variaveis de ambiente
 
-O frontend se conecta ao backend em `http://localhost:62000`.
-
-Endpoints consumidos:
-
-### Quotations
-- `GET /quotations` — Lista todos os ativos
-- `GET /quotations/:symbol` — Ativo específico
-
-### Orders
-- `POST /orders` — Criar ordem
-- `GET /orders?userId=user-001` — Listar ordens
-- `GET /orders/:id` — Detalhe da ordem
-- `POST /orders/:id/cancel` — Cancelar ordem
-- `POST /orders/:id/process` — Processar ordem
-
-### Positions
-- `GET /positions?userId=user-001` — Posições do usuário
-
-## 🎨 Paleta de Cores
-
-- **Primário (Verde)**: `#10B981` (`bg-primary`)
-- **Secundário (Branco)**: `#FFFFFF`
-- **Background**: `#F3F4F6` (cinza muito claro)
-
-## 📁 Estrutura de Pastas
-
-```
-front-end/
-├── app/
-│   ├── page.tsx              # Página inicial (ativos)
-│   ├── orders/
-│   │   └── page.tsx          # Página de ordens
-│   ├── positions/
-│   │   └── page.tsx          # Página de carteira
-│   ├── globals.css           # Estilos globais
-│   └── layout.tsx            # Layout root
-├── components/
-│   ├── Navigation.tsx        # Navbar com navegação
-│   ├── AssetList.tsx         # Lista de ativos
-│   ├── CreateOrderModal.tsx  # Modal de criar ordem
-│   ├── OrderList.tsx         # Lista de ordens
-│   └── PositionList.tsx      # Lista de posições
-├── lib/
-│   └── api.ts                # Cliente HTTP
-├── package.json
-├── tsconfig.json
-├── tailwind.config.ts
-└── next.config.js
-```
-
-## 🔐 Usuário Padrão
-
-O frontend usa um usuário padrão para testes:
-```
-ID: user-001
-Nome: João Investidor
-```
-
-Altere em `lib/api.ts` se necessário:
-
-```typescript
-const CURRENT_USER_ID = 'user-001';
-```
-
-## 🧪 Como Testar
-
-### 1. Criar uma Ordem
-1. Vá para "Ativos"
-2. Clique em "Criar Ordem" em qualquer ativo
-3. Preencha quantidade e preço
-4. Clique em "Criar Ordem"
-
-### 2. Cancelar uma Ordem
-1. Vá para "Ordens"
-2. Encontre uma ordem com status "PENDENTE"
-3. Clique em "Cancelar Ordem"
-
-### 3. Visualizar Carteira
-1. Vá para "Carteira"
-2. Veja valor total, ganho/perda e posições ativas
-
-## 📱 Responsividade
-
-O design é totalmente responsivo:
-
-- **Mobile** (< 768px): 1 coluna
-- **Tablet** (768px - 1024px): 2 colunas
-- **Desktop** (> 1024px): 3 colunas
-
-## 🐛 Troubleshooting
-
-### Erro: "Cannot reach backend"
-- Verifique se o backend está rodando em `http://localhost:62000`
-- Verifique o CORS (se necessário, adicione middleware)
-
-### Erro: "userId is required"
-- Certifique-se que as requisições incluem `userId` (automático via `lib/api.ts`)
-
-### Erro: "Saldo insuficiente"
-- Você não tem quantidade suficiente do ativo
-- Vá para "Carteira" para ver suas posições
-
-## 📚 Variáveis de Ambiente
-
-Crie um `.env.local` se necessário:
+Crie um `.env.local` se precisar mudar as URLs:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:62000
+NEXT_PUBLIC_LEITURA_API_URL=http://localhost:62000
+NEXT_PUBLIC_ORDENS_API_URL=http://localhost:62001
 ```
 
-E altere em `lib/api.ts`:
+Valores padrao usados pelo codigo:
 
-```typescript
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:62000';
-```
+- `NEXT_PUBLIC_LEITURA_API_URL`: `http://localhost:62000`
+- `NEXT_PUBLIC_ORDENS_API_URL`: `http://localhost:62001`
 
-## 🚀 Deploy
-
-### Vercel (Recomendado)
-```bash
-npm install -g vercel
-vercel
-```
-
-### Docker
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY . .
-RUN npm install && npm run build
-EXPOSE 3000
-CMD ["npm", "start"]
-```
+## Scripts
 
 ```bash
-docker build -t investment-orders-frontend .
-docker run -p 3000:3000 investment-orders-frontend
+npm run dev    # executa Next.js em desenvolvimento
+npm run build  # gera build de producao
+npm start      # executa build de producao
+npm run lint   # roda lint do Next.js
 ```
 
-## 📈 Performance
+## Telas e fluxos
 
-- **Code Splitting**: Automático via Next.js
-- **Image Optimization**: Próximas páginas carregam mais rápido
-- **CSS Purging**: Tailwind remove CSS não usado
-- **Minificação**: Build otimizado para produção
+- Home (`/`): lista ativos disponiveis e abre o modal de ordem.
+- Ordens (`/orders`): exibe historico, status e acao de cancelamento.
+- Carteira (`/positions`): exibe posicoes consolidadas do usuario.
 
-## 🔄 Atualizações Automáticas
+Fluxo principal para demonstracao:
 
-Use `setInterval` em um hook customizado para atualizar dados em tempo real:
+1. Subir os backends com Docker Compose.
+2. Abrir `http://localhost:3000`.
+3. Selecionar `user-001`.
+4. Criar uma ordem de compra para um ativo disponivel.
+5. Ir para a tela de ordens e acompanhar o status.
+6. Consultar a carteira apos o processamento.
 
-```typescript
-useEffect(() => {
-  const interval = setInterval(() => {
-    fetchOrders();
-  }, 5000); // 5 segundos
-  return () => clearInterval(interval);
-}, []);
+## Integracoes
+
+O arquivo `lib/api.ts` funciona como uma facade para as APIs:
+
+- `GET /quotations` em `leitura-ativos`;
+- `GET /quotations/:symbol` em `leitura-ativos`;
+- `GET /orders?userId=...` em `leitura-ativos`;
+- `GET /orders/:id` em `leitura-ativos`;
+- `GET /positions?userId=...` em `leitura-ativos`;
+- `POST /criar-ordens` em `criar-ordens-api`;
+- `POST /orders/:id/cancel` em `criar-ordens-api`.
+
+## Testes e verificacao
+
+Este projeto nao possui suite automatizada configurada no `package.json`.
+
+```bash
+npm run lint
+npm run build
 ```
 
-## 📝 Notas
+Depois valide no navegador:
 
-- O frontend usa `user-001` por padrão
-- Todas as datas são exibidas em formato local (pt-BR)
-- Valores monetários são formatados com 2 casas decimais
-- Status das ordens têm cores distintas para fácil visualização
+- lista de ativos carrega;
+- modal cria ordem com payload correto;
+- tela de ordens lista a ordem criada;
+- cancelamento funciona para ordem pendente;
+- carteira exibe posicoes e valores calculados.
 
----
+## Padroes e decisões importantes para entrevista
 
-**Desenvolvido com ❤️ usando Next.js + TypeScript + Tailwind CSS**
+- Componentizacao React: telas compostas por `Navigation`, `AssetList`, `CreateOrderModal`, `OrderList` e `PositionList`.
+- Custom Hook: `useSelectedUser` centraliza usuario selecionado e persiste em `localStorage`.
+- Facade/API Client: `lib/api.ts` isola Axios, URLs e endpoints dos componentes.
+- App Router do Next.js: rotas em `app/`, com paginas para ativos, ordens e carteira.
+- Separacao entre leitura e escrita: o front consome `leitura-ativos` para consultas e `criar-ordens-api` para comandos.
+
+## Estrutura principal
+
+```text
+app/
+  page.tsx              # ativos
+  orders/page.tsx       # ordens
+  positions/page.tsx    # carteira
+components/
+  AssetList.tsx
+  CreateOrderModal.tsx
+  Navigation.tsx
+  OrderList.tsx
+  PositionList.tsx
+lib/
+  api.ts                # cliente HTTP
+  useSelectedUser.ts    # usuario selecionado
+```
+
+## Troubleshooting
+
+- Se ativos nao carregarem, verifique `http://localhost:62000/quotations`.
+- Se criar ordem falhar, verifique `http://localhost:62001/health`.
+- Se houver erro de CORS, confirme que as APIs Express estao rodando com o middleware configurado.
+- Se a ordem ficar pendente, verifique logs de `lambda-processamento-ativos` e `localstack`.
+
+*Última atualização: 20 maio de 2026.*

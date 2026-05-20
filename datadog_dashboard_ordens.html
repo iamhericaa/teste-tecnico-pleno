@@ -1,0 +1,390 @@
+
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:var(--font-sans);background:transparent;}
+  .dd-bg{background:#1a1a2e;border-radius:12px;padding:0;overflow:hidden;font-family:'Segoe UI',system-ui,sans-serif;color:#e0e0e0;}
+  .dd-topbar{background:#0f0f1a;padding:8px 16px;display:flex;align-items:center;gap:16px;border-bottom:1px solid #2a2a3e;}
+  .dd-logo{color:#7747ff;font-weight:700;font-size:14px;letter-spacing:1px;}
+  .dd-nav{display:flex;gap:12px;font-size:11px;color:#888;}
+  .dd-nav span{cursor:pointer;padding:4px 8px;border-radius:4px;}
+  .dd-nav span.active{background:#7747ff22;color:#9b6eff;}
+  .dd-title-bar{background:#0f0f1a;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #2a2a3e;}
+  .dd-title{font-size:13px;font-weight:600;color:#c0c0d0;}
+  .dd-time{font-size:11px;color:#666;background:#1e1e2e;padding:3px 8px;border-radius:4px;border:1px solid #2a2a3e;}
+  .dd-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;padding:10px;}
+  .dd-row{display:grid;gap:8px;padding:0 10px 8px;}
+  .dd-row-2{grid-template-columns:1fr 1fr;}
+  .dd-row-3{grid-template-columns:2fr 1fr 1fr;}
+  .dd-row-4{grid-template-columns:1fr 1fr 1fr 1fr;}
+  .dd-row-full{grid-template-columns:1fr;}
+
+  .card{background:#12122a;border:1px solid #2a2a4a;border-radius:8px;padding:10px 12px;position:relative;overflow:hidden;}
+  .card-title{font-size:10px;color:#7070a0;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;font-weight:600;}
+  .big-number{font-size:26px;font-weight:700;line-height:1;}
+  .big-label{font-size:10px;color:#666;margin-top:3px;}
+  .status-ok{color:#00c08b;}
+  .status-warn{color:#f0a040;}
+  .status-crit{color:#e05060;}
+  .status-info{color:#7747ff;}
+
+  .slo-bar-wrap{margin-top:6px;}
+  .slo-bar{height:6px;background:#1e1e3a;border-radius:3px;overflow:hidden;margin-bottom:3px;}
+  .slo-fill{height:100%;border-radius:3px;transition:width .4s;}
+  .slo-label{display:flex;justify-content:space-between;font-size:10px;color:#666;}
+
+  .spark-area{margin-top:8px;}
+  svg.spark{display:block;width:100%;overflow:visible;}
+
+  .badge{display:inline-block;font-size:9px;padding:2px 6px;border-radius:3px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
+  .badge-ok{background:#00c08b22;color:#00c08b;border:1px solid #00c08b44;}
+  .badge-warn{background:#f0a04022;color:#f0a040;border:1px solid #f0a04044;}
+  .badge-crit{background:#e0506022;color:#e05060;border:1px solid #e0506044;}
+
+  .funnel-wrap{display:flex;flex-direction:column;gap:4px;margin-top:6px;}
+  .funnel-row{display:flex;align-items:center;gap:6px;}
+  .funnel-label{font-size:9px;color:#7070a0;width:72px;text-align:right;flex-shrink:0;}
+  .funnel-bar-outer{flex:1;background:#1e1e3a;border-radius:2px;height:14px;overflow:hidden;}
+  .funnel-bar-inner{height:100%;border-radius:2px;}
+  .funnel-val{font-size:9px;color:#9090b0;width:36px;text-align:right;flex-shrink:0;}
+
+  .alert-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1a1a2e;}
+  .alert-row:last-child{border-bottom:none;}
+  .alert-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .alert-text{font-size:10px;flex:1;color:#b0b0c0;}
+  .alert-badge{flex-shrink:0;}
+
+  .service-block{margin-bottom:8px;}
+  .service-name{font-size:10px;font-weight:600;color:#9b6eff;margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid #2a2a4a;}
+  .metric-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;}
+  .metric-name{font-size:9px;color:#7070a0;}
+  .metric-val{font-size:9px;font-weight:600;}
+
+  .semaphore-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 0;}
+  .sem-circle{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 8px;}
+  .sem-green{background:#00c08b22;border:3px solid #00c08b;box-shadow:0 0 16px #00c08b44;}
+  .sem-status-text{font-size:11px;font-weight:600;color:#00c08b;text-align:center;}
+  .sem-checks{margin-top:8px;display:flex;flex-direction:column;gap:3px;}
+  .sem-check{display:flex;align-items:center;gap:5px;font-size:9px;color:#7070a0;}
+  .sem-check-dot{width:6px;height:6px;border-radius:50%;}
+
+  .deploy-bar{display:flex;gap:2px;margin-top:4px;}
+  .deploy-seg{flex:1;height:24px;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;}
+  .annotation-line{width:2px;background:#f0a040;height:30px;margin:0 auto;}
+  .annotation-label{font-size:8px;color:#f0a040;text-align:center;white-space:nowrap;}
+</style>
+
+<div class="dd-bg">
+  <div class="dd-topbar">
+    <span class="dd-logo">⬡ Datadog</span>
+    <div class="dd-nav">
+      <span class="active">Saúde da Ordem</span>
+      <span>Jornada do Cliente</span>
+      <span>Operacional</span>
+      <span>Deploy</span>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+      <span class="dd-time">Last 1h</span>
+      <span class="dd-time">Auto-refresh: 30s</span>
+    </div>
+  </div>
+  <div class="dd-title-bar">
+    <span class="dd-title">Dashboard Executivo — SLA & SLO · criar-ordens-api</span>
+    <div style="display:flex;gap:6px;">
+      <span class="badge badge-ok">Prod</span>
+      <span class="badge badge-ok">us-east-1</span>
+    </div>
+  </div>
+
+  <!-- Row 1: semáforo + big numbers -->
+  <div class="dd-row dd-row-4">
+    <!-- Semáforo -->
+    <div class="card" style="grid-row:span 2;">
+      <div class="card-title">Saúde da Ordem</div>
+      <div class="semaphore-wrap">
+        <div class="sem-circle sem-green">✓</div>
+        <div class="sem-status-text">SAUDÁVEL</div>
+        <div class="sem-checks">
+          <div class="sem-check"><div class="sem-check-dot" style="background:#00c08b"></div>API criando ordens</div>
+          <div class="sem-check"><div class="sem-check-dot" style="background:#00c08b"></div>SQS recebendo</div>
+          <div class="sem-check"><div class="sem-check-dot" style="background:#00c08b"></div>Worker processando</div>
+          <div class="sem-check"><div class="sem-check-dot" style="background:#00c08b"></div>Cotação fresca</div>
+          <div class="sem-check"><div class="sem-check-dot" style="background:#00c08b"></div>Banco respondendo</div>
+          <div class="sem-check"><div class="sem-check-dot" style="background:#00c08b"></div>DLQ vazia</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Disponibilidade -->
+    <div class="card">
+      <div class="card-title">Disponibilidade da API</div>
+      <div class="big-number status-ok">99.94%</div>
+      <div class="big-label">SLO target: 99.9%</div>
+      <div class="slo-bar-wrap">
+        <div class="slo-bar"><div class="slo-fill" style="width:99.94%;background:#00c08b;"></div></div>
+        <div class="slo-label"><span>0%</span><span style="color:#00c08b;">▲ +0.04% acima</span><span>100%</span></div>
+      </div>
+    </div>
+
+    <!-- Taxa de erro -->
+    <div class="card">
+      <div class="card-title">Taxa de Erro 5xx</div>
+      <div class="big-number status-ok">0.31%</div>
+      <div class="big-label">SLO target: &lt;1%</div>
+      <div class="spark-area">
+        <svg class="spark" height="32" viewBox="0 0 160 32">
+          <polyline points="0,24 20,22 40,20 60,18 80,26 100,20 120,16 140,18 160,14" fill="none" stroke="#00c08b" stroke-width="1.5"/>
+          <polyline points="0,24 20,22 40,20 60,18 80,26 100,20 120,16 140,18 160,14" fill="url(#gok)" stroke="none" opacity=".18"/>
+          <defs><linearGradient id="gok" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#00c08b"/><stop offset="100%" stop-color="transparent"/></linearGradient></defs>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Latência p95 -->
+    <div class="card">
+      <div class="card-title">Latência p95</div>
+      <div class="big-number status-ok">187ms</div>
+      <div class="big-label">SLO target: &lt;300ms</div>
+      <div class="spark-area">
+        <svg class="spark" height="32" viewBox="0 0 160 32">
+          <polyline points="0,20 20,18 40,16 60,22 80,14 100,16 120,18 140,12 160,14" fill="none" stroke="#00c08b" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- p99 latência -->
+    <div class="card">
+      <div class="card-title">Latência p99</div>
+      <div class="big-number status-warn">412ms</div>
+      <div class="big-label">target: &lt;500ms · atenção</div>
+      <div class="spark-area">
+        <svg class="spark" height="32" viewBox="0 0 160 32">
+          <polyline points="0,22 20,20 40,18 60,24 80,20 100,28 120,22 140,18 160,20" fill="none" stroke="#f0a040" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Ordens criadas -->
+    <div class="card">
+      <div class="card-title">Ordens criadas / sucesso</div>
+      <div class="big-number status-ok">99.1%</div>
+      <div class="big-label">SLO: 99% em &lt;300ms</div>
+      <div class="slo-bar-wrap">
+        <div class="slo-bar"><div class="slo-fill" style="width:99.1%;background:#00c08b;"></div></div>
+        <div class="slo-label"><span>98%</span><span>100%</span></div>
+      </div>
+    </div>
+
+    <!-- Ordens processadas -->
+    <div class="card">
+      <div class="card-title">Ordens processadas / sucesso</div>
+      <div class="big-number status-ok">98.7%</div>
+      <div class="big-label">SLO: 99% em &lt;5s</div>
+      <div class="slo-bar-wrap">
+        <div class="slo-bar"><div class="slo-fill" style="width:98.7%;background:#f0a040;"></div></div>
+        <div class="slo-label"><span>97%</span><span style="color:#f0a040;">▼ 0.3% abaixo</span><span>100%</span></div>
+      </div>
+    </div>
+
+    <!-- Freshness cotação -->
+    <div class="card">
+      <div class="card-title">Freshness das Cotações</div>
+      <div class="big-number status-ok">4.2s</div>
+      <div class="big-label">SLO: &lt;10s de atraso</div>
+      <div class="slo-bar-wrap">
+        <div class="slo-bar"><div class="slo-fill" style="width:42%;background:#00c08b;"></div></div>
+        <div class="slo-label"><span>0s</span><span style="color:#00c08b;">✓ dentro do SLO</span><span>10s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: Funil da jornada + Alertas + Operacional -->
+  <div class="dd-row dd-row-3">
+    <!-- Funil -->
+    <div class="card">
+      <div class="card-title">Jornada da Ordem — Funil (última hora)</div>
+      <div class="funnel-wrap" style="margin-top:8px;">
+        <div class="funnel-row">
+          <span class="funnel-label">Requisições</span>
+          <div class="funnel-bar-outer"><div class="funnel-bar-inner" style="width:100%;background:#7747ff;"></div></div>
+          <span class="funnel-val">12.400</span>
+        </div>
+        <div class="funnel-row">
+          <span class="funnel-label">Validadas</span>
+          <div class="funnel-bar-outer"><div class="funnel-bar-inner" style="width:97%;background:#7747ff;"></div></div>
+          <span class="funnel-val">12.028</span>
+        </div>
+        <div class="funnel-row">
+          <span class="funnel-label">Cotação OK</span>
+          <div class="funnel-bar-outer"><div class="funnel-bar-inner" style="width:95%;background:#4488dd;"></div></div>
+          <span class="funnel-val">11.740</span>
+        </div>
+        <div class="funnel-row">
+          <span class="funnel-label">Enfileiradas</span>
+          <div class="funnel-bar-outer"><div class="funnel-bar-inner" style="width:94%;background:#00aacc;"></div></div>
+          <span class="funnel-val">11.626</span>
+        </div>
+        <div class="funnel-row">
+          <span class="funnel-label">Processadas</span>
+          <div class="funnel-bar-outer"><div class="funnel-bar-inner" style="width:91%;background:#00c08b;"></div></div>
+          <span class="funnel-val">11.289</span>
+        </div>
+        <div class="funnel-row">
+          <span class="funnel-label">Retries/Falhas</span>
+          <div class="funnel-bar-outer"><div class="funnel-bar-inner" style="width:2.7%;background:#e05060;"></div></div>
+          <span class="funnel-val" style="color:#e05060;">337</span>
+        </div>
+        <div class="funnel-row">
+          <span class="funnel-label">DLQ</span>
+          <div class="funnel-bar-outer"><div class="funnel-bar-inner" style="width:0%;background:#e05060;"></div></div>
+          <span class="funnel-val" style="color:#00c08b;">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alertas -->
+    <div class="card">
+      <div class="card-title">Alertas Ativos</div>
+      <div style="margin-top:4px;">
+        <div style="font-size:9px;color:#f0a040;font-weight:600;margin-bottom:4px;text-transform:uppercase;">⚠ Warning (2)</div>
+        <div class="alert-row">
+          <div class="alert-dot" style="background:#f0a040;"></div>
+          <span class="alert-text">Latência p99 &gt; 400ms por 8min</span>
+          <span class="badge badge-warn">WARN</span>
+        </div>
+        <div class="alert-row">
+          <div class="alert-dot" style="background:#f0a040;"></div>
+          <span class="alert-text">Cache hit ratio: 68% (&lt;70%)</span>
+          <span class="badge badge-warn">WARN</span>
+        </div>
+        <div style="font-size:9px;color:#444466;font-weight:600;margin:8px 0 4px;text-transform:uppercase;">✓ Critical (0)</div>
+        <div class="alert-row">
+          <div class="alert-dot" style="background:#2a2a4a;"></div>
+          <span class="alert-text" style="color:#444466;">API indisponível</span>
+          <span class="badge" style="background:#1a1a2e;color:#444466;border:1px solid #2a2a3e;">OK</span>
+        </div>
+        <div class="alert-row">
+          <div class="alert-dot" style="background:#2a2a4a;"></div>
+          <span class="alert-text" style="color:#444466;">Erro 5xx &gt; 5%</span>
+          <span class="badge" style="background:#1a1a2e;color:#444466;border:1px solid #2a2a3e;">OK</span>
+        </div>
+        <div class="alert-row">
+          <div class="alert-dot" style="background:#2a2a4a;"></div>
+          <span class="alert-text" style="color:#444466;">DLQ &gt; 0 mensagens</span>
+          <span class="badge" style="background:#1a1a2e;color:#444466;border:1px solid #2a2a3e;">OK</span>
+        </div>
+        <div class="alert-row">
+          <div class="alert-dot" style="background:#2a2a4a;"></div>
+          <span class="alert-text" style="color:#444466;">Cotação sem update 30s</span>
+          <span class="badge" style="background:#1a1a2e;color:#444466;border:1px solid #2a2a3e;">OK</span>
+        </div>
+        <div class="alert-row">
+          <div class="alert-dot" style="background:#2a2a4a;"></div>
+          <span class="alert-text" style="color:#444466;">Fila msg &gt; 2min</span>
+          <span class="badge" style="background:#1a1a2e;color:#444466;border:1px solid #2a2a3e;">OK</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Operacional por serviço -->
+    <div class="card">
+      <div class="card-title">Operacional por Serviço</div>
+      <div class="service-block">
+        <div class="service-name">criar-ordens-api</div>
+        <div class="metric-row"><span class="metric-name">HTTP 5xx</span><span class="metric-val status-ok">0.31%</span></div>
+        <div class="metric-row"><span class="metric-name">Latência p95</span><span class="metric-val status-ok">187ms</span></div>
+        <div class="metric-row"><span class="metric-name">Falha SQS enqueue</span><span class="metric-val status-ok">0</span></div>
+      </div>
+      <div class="service-block">
+        <div class="service-name">processamento-ativos</div>
+        <div class="metric-row"><span class="metric-name">Msgs processadas/min</span><span class="metric-val status-ok">208</span></div>
+        <div class="metric-row"><span class="metric-name">Erros</span><span class="metric-val status-ok">0.4%</span></div>
+        <div class="metric-row"><span class="metric-name">Retries</span><span class="metric-val status-warn">▲ 12/min</span></div>
+        <div class="metric-row"><span class="metric-name">DLQ</span><span class="metric-val status-ok">0</span></div>
+        <div class="metric-row"><span class="metric-name">Msg mais antiga</span><span class="metric-val status-ok">4s</span></div>
+      </div>
+      <div class="service-block">
+        <div class="service-name">atualiza-ativos</div>
+        <div class="metric-row"><span class="metric-name">Cotação atualizada</span><span class="metric-val status-ok">✓ 4.2s atrás</span></div>
+        <div class="metric-row"><span class="metric-name">Erro fornecedor ext.</span><span class="metric-val status-ok">0</span></div>
+        <div class="metric-row"><span class="metric-name">Cache hit ratio</span><span class="metric-val status-warn">68%</span></div>
+      </div>
+      <div class="service-block">
+        <div class="service-name">leitura-ativos</div>
+        <div class="metric-row"><span class="metric-name">Latência p95</span><span class="metric-val status-ok">91ms</span></div>
+        <div class="metric-row"><span class="metric-name">Erro Redis/DB</span><span class="metric-val status-ok">0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3: Gráficos de timeseries + Deploy -->
+  <div class="dd-row dd-row-2">
+    <!-- Timeseries de erros -->
+    <div class="card">
+      <div class="card-title">Taxa de Erro 5xx — Últimas 2 horas</div>
+      <svg width="100%" height="80" viewBox="0 0 400 80" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="gerr" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#e05060" stop-opacity=".3"/>
+            <stop offset="100%" stop-color="#e05060" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <!-- Fundo gradeado -->
+        <line x1="0" y1="20" x2="400" y2="20" stroke="#2a2a4a" stroke-width=".5"/>
+        <line x1="0" y1="40" x2="400" y2="40" stroke="#2a2a4a" stroke-width=".5"/>
+        <line x1="0" y1="60" x2="400" y2="60" stroke="#2a2a4a" stroke-width=".5"/>
+        <text x="2" y="18" font-size="8" fill="#444466">1%</text>
+        <text x="2" y="38" font-size="8" fill="#444466">0.5%</text>
+        <text x="2" y="58" font-size="8" fill="#444466">0%</text>
+        <!-- Linha principal -->
+        <polyline points="18,58 50,55 80,56 110,54 140,52 160,44 180,56 210,55 240,54 270,56 300,52 330,56 360,55 390,55" fill="none" stroke="#00c08b" stroke-width="1.5"/>
+        <polygon points="18,58 50,55 80,56 110,54 140,52 160,44 180,56 210,55 240,54 270,56 300,52 330,56 360,55 390,55 390,62 18,62" fill="url(#gerr)"/>
+        <!-- Linha de threshold -->
+        <line x1="18" y1="42" x2="390" y2="42" stroke="#e05060" stroke-width=".8" stroke-dasharray="4 2" opacity=".5"/>
+        <text x="310" y="40" font-size="8" fill="#e05060" opacity=".7">threshold 1%</text>
+      </svg>
+      <div style="display:flex;gap:16px;margin-top:4px;font-size:9px;color:#666;">
+        <span>▬ atual</span><span style="color:#e05060;">- - threshold</span>
+      </div>
+    </div>
+
+    <!-- Deploy panel -->
+    <div class="card">
+      <div class="card-title">Deploy — Antes vs Depois</div>
+      <div style="font-size:9px;color:#7070a0;margin-bottom:6px;">Versão atual: <span style="color:#9b6eff;font-weight:600;">v1.4.2</span> · Deploy às 14:32</div>
+      <div style="position:relative;">
+        <svg width="100%" height="60" viewBox="0 0 400 60">
+          <line x1="0" y1="30" x2="400" y2="30" stroke="#2a2a4a" stroke-width=".5"/>
+          <!-- Linha antes deploy (estável) -->
+          <polyline points="0,32 80,31 140,30 190,31" fill="none" stroke="#00c08b" stroke-width="1.5"/>
+          <!-- Linha depois do deploy (leve spike depois normaliza) -->
+          <polyline points="200,31 220,20 240,26 270,30 310,30 370,30 400,31" fill="none" stroke="#00c08b" stroke-width="1.5"/>
+          <!-- Annotation deploy -->
+          <line x1="198" y1="8" x2="198" y2="52" stroke="#f0a040" stroke-width="1" stroke-dasharray="3 2"/>
+          <rect x="180" y="4" width="88" height="14" rx="3" fill="#f0a04022"/>
+          <text x="224" y="14" font-size="8" fill="#f0a040" text-anchor="middle">Deploy v1.4.2 14:32</text>
+          <!-- Labels -->
+          <text x="90" y="26" font-size="8" fill="#444466" text-anchor="middle">antes</text>
+          <text x="310" y="26" font-size="8" fill="#444466" text-anchor="middle">depois</text>
+        </svg>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px;">
+        <div style="background:#1a1a2e;border-radius:4px;padding:5px 6px;text-align:center;">
+          <div style="font-size:8px;color:#7070a0;">Erro 5xx</div>
+          <div style="font-size:9px;color:#00c08b;">0.28% → 0.31%</div>
+        </div>
+        <div style="background:#1a1a2e;border-radius:4px;padding:5px 6px;text-align:center;">
+          <div style="font-size:8px;color:#7070a0;">p95</div>
+          <div style="font-size:9px;color:#00c08b;">192ms → 187ms</div>
+        </div>
+        <div style="background:#1a1a2e;border-radius:4px;padding:5px 6px;text-align:center;">
+          <div style="font-size:8px;color:#7070a0;">Rollback</div>
+          <div style="font-size:9px;color:#00c08b;">disponível</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:6px 16px 10px;font-size:9px;color:#444466;text-align:right;">
+    Datadog · criar-ordens-api · Atualizado agora há 28s · Ambiente: prod · us-east-1
+  </div>
+</div>
