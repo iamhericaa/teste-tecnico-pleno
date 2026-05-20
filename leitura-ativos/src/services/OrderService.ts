@@ -112,24 +112,10 @@ export class OrderService {
     return currentPrice;
   }
 
-  private async fetchPriceWithResilience(
-    symbol: string,
-    tx: Prisma.TransactionClient
-  ): Promise<number> {
+  private async fetchPriceWithResilience(symbol: string): Promise<number> {
     for (let attempt = 1; attempt <= QUOTATION_MAX_RETRIES; attempt++) {
       try {
         const price = await this.quotationService.getPrice(symbol);
-
-        await tx.priceCache.upsert({
-          where: { symbol },
-          create: {
-            symbol,
-            lastPrice: price,
-          },
-          update: {
-            lastPrice: price,
-          },
-        });
 
         logger.info("OrderService.fetchPriceWithResilience", "Preço obtido", {
           symbol,
@@ -153,27 +139,12 @@ export class OrderService {
 
     logger.error(
       "OrderService.fetchPriceWithResilience",
-      "Serviço de cotações indisponível, tentando cache",
+      "Serviço de cotações indisponível e fallback no banco falhou",
       { symbol }
     );
 
-    const cached = await tx.priceCache.findUnique({
-      where: { symbol },
-      select: { lastPrice: true },
-    });
-
-    if (cached) {
-      const cachedPrice = Number(cached.lastPrice);
-      logger.info(
-        "OrderService.fetchPriceWithResilience",
-        "Usando preço do cache",
-        { symbol, cachedPrice }
-      );
-      return cachedPrice;
-    }
-
     throw new Error(
-      `Serviço de cotações indisponível para ${symbol} e não há preço em cache`
+      `Serviço de cotações indisponível para ${symbol} e fallback no banco falhou`
     );
   }
 
@@ -190,19 +161,23 @@ export class OrderService {
 
     const order = await prisma.$transaction(async (tx) => {
       if (type === "VENDA") {
-        logger.info("OrderService.create", "Validando saldo para venda (com lock)", {
+        logger.info("OrderService.create", "Validando saldo para venda", {
           userId,
           symbol,
           quantity,
         });
 
-        const positions = await tx.$queryRaw<Array<{ quantity: Prisma.Decimal }>>`
-          SELECT quantity FROM positions
-          WHERE user_id = ${userId} AND symbol = ${symbol}
-          FOR UPDATE
-        `;
+        const position = await tx.position.findUnique({
+          where: {
+            userId_symbol: {
+              userId,
+              symbol,
+            },
+          },
+          select: { quantity: true },
+        });
 
-        const currentQty = positions.length > 0 ? Number(positions[0].quantity) : 0;
+        const currentQty = position ? Number(position.quantity) : 0;
 
         logger.info("OrderService.create", "Saldo verificado", {
           userId,
@@ -287,17 +262,13 @@ export class OrderService {
 
     try {
       await prisma.$transaction(async (tx) => {
-        const lockedRows = await tx.$queryRaw<Array<{ id: number }>>`
-          SELECT id FROM orders WHERE id = ${orderId} FOR UPDATE
-        `;
-
-        if (lockedRows.length === 0) {
-          throw new Error("Ordem não encontrada");
-        }
-
-        const order = await tx.order.findUniqueOrThrow({
+        const order = await tx.order.findUnique({
           where: { id: orderId },
         });
+
+        if (!order) {
+          throw new Error("Ordem não encontrada");
+        }
 
         if (order.status !== "PENDENTE") {
           logger.error(
@@ -328,7 +299,7 @@ export class OrderService {
           currentPrice,
         });
 
-        const finalPrice = await this.fetchPriceWithResilience(order.symbol, tx);
+        const finalPrice = await this.fetchPriceWithResilience(order.symbol);
 
         logger.info("OrderService.processOrder", "Preço final obtido", {
           orderId,
@@ -345,29 +316,70 @@ export class OrderService {
             finalPrice,
           });
 
-          await tx.$executeRaw`
-            INSERT INTO positions (user_id, symbol, quantity, average_price)
-            VALUES (${order.userId}, ${order.symbol}, ${order.quantity}, ${finalPrice})
-            ON DUPLICATE KEY UPDATE
-              quantity = quantity + VALUES(quantity),
-              average_price = (average_price * quantity + VALUES(quantity) * VALUES(average_price))
-                              / (quantity + VALUES(quantity))
-          `;
-        } else {
-          const positions = await tx.$queryRaw<Array<{ quantity: Prisma.Decimal }>>`
-            SELECT quantity FROM positions
-            WHERE user_id = ${order.userId} AND symbol = ${order.symbol}
-            FOR UPDATE
-          `;
+          const existingPosition = await tx.position.findUnique({
+            where: {
+              userId_symbol: {
+                userId: order.userId,
+                symbol: order.symbol,
+              },
+            },
+          });
+          const orderQuantity = Number(order.quantity);
 
-          const currentQty = positions.length > 0 ? Number(positions[0].quantity) : 0;
+          if (existingPosition) {
+            const currentQuantity = Number(existingPosition.quantity);
+            const currentAveragePrice = Number(existingPosition.averagePrice);
+            const newQuantity = currentQuantity + orderQuantity;
+            const newAveragePrice =
+              (currentAveragePrice * currentQuantity + finalPrice * orderQuantity) / newQuantity;
+
+            await tx.position.update({
+              where: {
+                userId_symbol: {
+                  userId: order.userId,
+                  symbol: order.symbol,
+                },
+              },
+              data: {
+                quantity: newQuantity,
+                averagePrice: newAveragePrice,
+                totalValue: newQuantity * newAveragePrice,
+              },
+            });
+          } else {
+            await tx.position.create({
+              data: {
+                userId: order.userId,
+                symbol: order.symbol,
+                quantity: orderQuantity,
+                averagePrice: finalPrice,
+                totalValue: orderQuantity * finalPrice,
+              },
+            });
+          }
+        } else {
+          const updateResult = await tx.position.updateMany({
+            where: {
+              userId: order.userId,
+              symbol: order.symbol,
+              quantity: {
+                gte: order.quantity,
+              },
+            },
+            data: {
+              quantity: {
+                decrement: order.quantity,
+              },
+            },
+          });
+
           const requestedQty = Number(order.quantity);
 
-          if (currentQty < requestedQty) {
+          if (updateResult.count === 0) {
             logger.error(
               "OrderService.processOrder",
               "Saldo insuficiente na execução, ordem rejeitada",
-              { orderId, currentQty, requestedQty }
+              { orderId, requestedQty }
             );
             throw new Error("Saldo insuficiente para executar a venda");
           }
@@ -378,20 +390,6 @@ export class OrderService {
             symbol: order.symbol,
             quantity: requestedQty,
             finalPrice,
-          });
-
-          await tx.position.update({
-            where: {
-              userId_symbol: {
-                userId: order.userId,
-                symbol: order.symbol,
-              },
-            },
-            data: {
-              quantity: {
-                decrement: order.quantity,
-              },
-            },
           });
         }
 

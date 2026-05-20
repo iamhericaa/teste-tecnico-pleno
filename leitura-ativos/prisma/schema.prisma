@@ -28,7 +28,6 @@ model Asset {
   updatedAt      DateTime     @updatedAt @map("updated_at")
   orders         Order[]
   positions      Position[]
-  priceCache     PriceCache?
 
   @@map("assets")
 }

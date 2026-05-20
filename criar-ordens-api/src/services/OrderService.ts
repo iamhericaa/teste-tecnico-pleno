@@ -1,4 +1,4 @@
-import { PrismaClient, Order as PrismaOrder } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { CreateOrderRequest, Order, OrderStatus, UserBalance } from "../types";
 import { BalanceService } from "./BalanceService";
 import { SQSService } from "./SQSService";
@@ -42,11 +42,7 @@ export class OrderService {
 
       if (!validationResult.valid) {
         logger.info(`[OrderService] Validação falhou: ${validationResult.message}`);
-        return {
-          success: false,
-          message: validationResult.message,
-          status: "REJEITADA",
-        };
+        return this.createRejectedOrder(request, validationResult.message);
       }
 
       // 3. Cria ordem no banco de dados usando Prisma
@@ -103,6 +99,44 @@ export class OrderService {
         status: "REJEITADA",
       };
     }
+  }
+
+  private async createRejectedOrder(
+    request: CreateOrderRequest,
+    message: string
+  ): Promise<{ success: boolean; message: string; orderId?: number; status?: OrderStatus }> {
+    await this.ensureUserExists(request.userId);
+
+    const order = await prisma.order.create({
+      data: {
+        userId: request.userId,
+        symbol: request.symbol,
+        type: request.type,
+        quantity: request.quantity,
+        price: request.price,
+        status: "REJEITADA" as const,
+      },
+    });
+
+    logger.info(`[OrderService] Ordem rejeitada salva no banco: ID ${order.id}`);
+
+    return {
+      success: false,
+      message,
+      orderId: order.id,
+      status: "REJEITADA",
+    };
+  }
+
+  private async ensureUserExists(userId: string): Promise<void> {
+    await prisma.user.upsert({
+      where: { id: userId },
+      update: {},
+      create: {
+        id: userId,
+        name: userId,
+      },
+    });
   }
 
   /**

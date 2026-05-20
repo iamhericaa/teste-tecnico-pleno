@@ -1,13 +1,16 @@
 const prisma = {
   order: {
     findUnique: jest.fn(),
-    update: jest.fn()
+    update: jest.fn(),
+    updateMany: jest.fn()
   },
   position: {
     findUnique: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
     create: jest.fn()
-  }
+  },
+  $transaction: jest.fn()
 };
 
 class PrismaClientKnownRequestError extends Error {
@@ -22,7 +25,10 @@ class PrismaClientKnownRequestError extends Error {
 jest.mock("@prisma/client", () => ({
   PrismaClient: jest.fn(() => prisma),
   Prisma: {
-    PrismaClientKnownRequestError
+    PrismaClientKnownRequestError,
+    TransactionIsolationLevel: {
+      Serializable: "Serializable"
+    }
   }
 }));
 
@@ -49,9 +55,11 @@ const pendingBuyMessage = {
 
 describe("OrderService", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    prisma.order.findUnique.mockResolvedValue({ id: 1 });
+    jest.resetAllMocks();
+    prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
+    prisma.order.updateMany.mockResolvedValue({ count: 1 });
     prisma.order.update.mockResolvedValue({});
+    prisma.position.updateMany.mockResolvedValue({ count: 1 });
   });
 
   it("should ignore messages with an invalid status", async () => {
@@ -60,37 +68,45 @@ describe("OrderService", () => {
       status: "EXECUTADA" as any
     });
 
-    expect(prisma.order.findUnique).not.toHaveBeenCalled();
-    expect(prisma.order.update).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.order.updateMany).not.toHaveBeenCalled();
   });
 
-  it("should ignore messages for missing orders", async () => {
-    prisma.order.findUnique.mockResolvedValue(null);
+  it("should ignore duplicate pending messages when the order cannot be claimed", async () => {
+    prisma.order.updateMany.mockResolvedValue({ count: 0 });
 
     await new OrderService().processOrder(pendingBuyMessage);
 
-    expect(prisma.order.update).not.toHaveBeenCalled();
+    expect(prisma.position.create).not.toHaveBeenCalled();
+    expect(prisma.position.update).not.toHaveBeenCalled();
+    expect(prisma.order.update).not.toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { status: "EXECUTADA" }
+    });
   });
 
-  it("should cancel an existing order", async () => {
+  it("should cancel a pending or processing order atomically", async () => {
     await new OrderService().processOrder({
       ...pendingBuyMessage,
       status: "CANCELADA"
     });
 
-    expect(prisma.order.update).toHaveBeenCalledWith({
-      where: { id: 1 },
+    expect(prisma.order.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 1,
+        status: { in: ["PENDENTE", "PROCESSANDO"] }
+      },
       data: { status: "CANCELADA" }
     });
   });
 
-  it("should create a new position for a pending buy order", async () => {
+  it("should create a new position for a claimed pending buy order", async () => {
     prisma.position.findUnique.mockResolvedValue(null);
 
     await new OrderService().processOrder(pendingBuyMessage);
 
-    expect(prisma.order.update).toHaveBeenNthCalledWith(1, {
-      where: { id: 1 },
+    expect(prisma.order.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, status: "PENDENTE" },
       data: { status: "PROCESSANDO" }
     });
     expect(prisma.position.create).toHaveBeenCalledWith({
@@ -102,13 +118,13 @@ describe("OrderService", () => {
         totalValue: 60
       }
     });
-    expect(prisma.order.update).toHaveBeenLastCalledWith({
+    expect(prisma.order.update).toHaveBeenCalledWith({
       where: { id: 1 },
       data: { status: "EXECUTADA" }
     });
   });
 
-  it("should update an existing position for a pending buy order", async () => {
+  it("should update an existing position for a claimed pending buy order", async () => {
     prisma.position.findUnique.mockResolvedValue({
       quantity: { toString: () => "3" },
       averagePrice: { toString: () => "20" },
@@ -127,48 +143,30 @@ describe("OrderService", () => {
     });
   });
 
-  it("should update an existing position for a pending sell order", async () => {
-    prisma.position.findUnique.mockResolvedValue({
-      quantity: { toString: () => "5" },
-      averagePrice: { toString: () => "20" },
-      totalValue: { toString: () => "100" }
-    });
-
+  it("should apply a sell order with an atomic conditional decrement", async () => {
     await new OrderService().processOrder({
       ...pendingBuyMessage,
       type: "VENDA"
     });
 
-    expect(prisma.position.update).toHaveBeenCalledWith({
-      where: { userId_symbol: { userId: "user-001", symbol: "PETR4" } },
+    expect(prisma.position.updateMany).toHaveBeenCalledWith({
+      where: {
+        userId: "user-001",
+        symbol: "PETR4",
+        quantity: { gte: 2 }
+      },
       data: {
-        quantity: 3,
-        averagePrice: 20,
-        totalValue: 60
+        quantity: { decrement: 2 }
       }
     });
-  });
-
-  it("should reject a sell order when the position is missing", async () => {
-    prisma.position.findUnique.mockResolvedValue(null);
-
-    await expect(new OrderService().processOrder({
-      ...pendingBuyMessage,
-      type: "VENDA"
-    })).rejects.toThrow("Não existe posição");
-
-    expect(prisma.order.update).toHaveBeenLastCalledWith({
+    expect(prisma.order.update).toHaveBeenCalledWith({
       where: { id: 1 },
-      data: { status: "REJEITADA" }
+      data: { status: "EXECUTADA" }
     });
   });
 
-  it("should reject a sell order when balance is insufficient", async () => {
-    prisma.position.findUnique.mockResolvedValue({
-      quantity: { toString: () => "1" },
-      averagePrice: { toString: () => "20" },
-      totalValue: { toString: () => "20" }
-    });
+  it("should reject a sell order when the atomic decrement affects no rows", async () => {
+    prisma.position.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(new OrderService().processOrder({
       ...pendingBuyMessage,
@@ -190,6 +188,20 @@ describe("OrderService", () => {
     await expect(new OrderService().processOrder(pendingBuyMessage)).rejects.toThrow("position failed");
   });
 
+  it("should retry serializable transaction conflicts before succeeding", async () => {
+    const conflict = new PrismaClientKnownRequestError("conflict", { code: "P2034" });
+
+    prisma.$transaction
+      .mockRejectedValueOnce(conflict)
+      .mockImplementationOnce(async (callback) => callback(prisma));
+    prisma.position.findUnique.mockResolvedValue(null);
+
+    await new OrderService().processOrder(pendingBuyMessage);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(prisma.position.create).toHaveBeenCalled();
+  });
+
   it("should return false when a safe status update receives P2025", async () => {
     prisma.order.update.mockRejectedValue(new PrismaClientKnownRequestError("missing", { code: "P2025" }));
 
@@ -200,11 +212,5 @@ describe("OrderService", () => {
     prisma.order.update.mockRejectedValue(new Error("database failed"));
 
     await expect((new OrderService() as any).safeUpdateOrderStatus(1, "EXECUTADA")).rejects.toThrow("database failed");
-  });
-
-  it("should rethrow unhandled errors from order lookup", async () => {
-    prisma.order.findUnique.mockRejectedValue(new Error("lookup failed"));
-
-    await expect(new OrderService().processOrder(pendingBuyMessage)).rejects.toThrow("lookup failed");
   });
 });

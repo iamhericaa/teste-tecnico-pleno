@@ -4,6 +4,9 @@ const mockPrisma = {
     findUnique: jest.fn(),
     update: jest.fn()
   },
+  user: {
+    upsert: jest.fn()
+  },
   asset: {
     findUnique: jest.fn()
   },
@@ -121,6 +124,7 @@ describe("OrderService", () => {
 
   it("should reject a buy order when cash is not enough", async () => {
     mockGetUserBalance.mockResolvedValue({ userId: "user-003", cash: 50, assets: {} });
+    mockPrisma.order.create.mockResolvedValue({ id: 3, status: "REJEITADA" });
 
     const result = await new OrderService().createOrder({
       userId: "user-003",
@@ -132,11 +136,28 @@ describe("OrderService", () => {
 
     expect(result).toEqual(expect.objectContaining({ success: false, status: "REJEITADA" }));
     expect(result.message).toContain("Saldo insuficiente");
-    expect(mockPrisma.order.create).not.toHaveBeenCalled();
+    expect(result.orderId).toBe(3);
+    expect(mockPrisma.user.upsert).toHaveBeenCalledWith({
+      where: { id: "user-003" },
+      update: {},
+      create: { id: "user-003", name: "user-003" }
+    });
+    expect(mockPrisma.order.create).toHaveBeenCalledWith({
+      data: {
+        userId: "user-003",
+        symbol: "PETR4",
+        type: "COMPRA",
+        quantity: 10,
+        price: 30,
+        status: "REJEITADA"
+      }
+    });
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it("should reject a sell order when asset balance is not enough", async () => {
     mockGetUserBalance.mockResolvedValue({ userId: "user-001", cash: 10000, assets: { PETR4: 1 } });
+    mockPrisma.order.create.mockResolvedValue({ id: 4, status: "REJEITADA" });
 
     const result = await new OrderService().createOrder({
       userId: "user-001",
@@ -148,9 +169,28 @@ describe("OrderService", () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toContain("Saldo insuficiente do ativo PETR4");
+    expect(result.orderId).toBe(4);
+    expect(mockPrisma.user.upsert).toHaveBeenCalledWith({
+      where: { id: "user-001" },
+      update: {},
+      create: { id: "user-001", name: "user-001" }
+    });
+    expect(mockPrisma.order.create).toHaveBeenCalledWith({
+      data: {
+        userId: "user-001",
+        symbol: "PETR4",
+        type: "VENDA",
+        quantity: 2,
+        price: 30,
+        status: "REJEITADA"
+      }
+    });
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it("should reject non-positive values during service validation", async () => {
+    mockPrisma.order.create.mockResolvedValue({ id: 5, status: "REJEITADA" });
+
     const result = await new OrderService().createOrder({
       userId: "user-001",
       symbol: "PETR4",
@@ -162,8 +202,25 @@ describe("OrderService", () => {
     expect(result).toEqual({
       success: false,
       message: "Quantidade e preço devem ser positivos",
+      orderId: 5,
       status: "REJEITADA"
     });
+    expect(mockPrisma.user.upsert).toHaveBeenCalledWith({
+      where: { id: "user-001" },
+      update: {},
+      create: { id: "user-001", name: "user-001" }
+    });
+    expect(mockPrisma.order.create).toHaveBeenCalledWith({
+      data: {
+        userId: "user-001",
+        symbol: "PETR4",
+        type: "COMPRA",
+        quantity: -1,
+        price: 30,
+        status: "REJEITADA"
+      }
+    });
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it("should reject an invalid order type during service validation", async () => {

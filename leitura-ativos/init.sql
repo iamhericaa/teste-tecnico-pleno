@@ -90,7 +90,8 @@ INSERT INTO assets (symbol, name, reference_price) VALUES
 -- Inserir usuário de teste
 INSERT INTO users (id, name) VALUES
     ('user-001', 'João Investidor'),
-    ('user-002', 'Herica Investidora');
+    ('user-002', 'Herica Investidora'),
+    ('user-003', 'Investidor Saldo Baixo');
 
 
 -- Inserir saldo inicial do usuário

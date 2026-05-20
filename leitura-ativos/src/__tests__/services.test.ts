@@ -13,19 +13,26 @@ const prisma = {
   position: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
-    update: jest.fn()
-  },
-  priceCache: {
-    upsert: jest.fn(),
-    findUnique: jest.fn()
+    update: jest.fn(),
+    updateMany: jest.fn(),
+    create: jest.fn()
   },
   $transaction: jest.fn(),
-  $disconnect: jest.fn(),
-  $queryRaw: jest.fn(),
-  $executeRaw: jest.fn()
+  $disconnect: jest.fn()
+};
+
+const mockRedisClient = {
+  on: jest.fn(),
+  connect: jest.fn().mockResolvedValue(undefined),
+  get: jest.fn(),
+  keys: jest.fn(),
+  disconnect: jest.fn().mockResolvedValue(undefined)
 };
 
 jest.mock("../database/prisma", () => ({ prisma }));
+jest.mock("redis", () => ({
+  createClient: jest.fn(() => mockRedisClient)
+}));
 jest.mock("../utils/Logger", () => ({
   logger: {
     info: jest.fn(),
@@ -67,12 +74,38 @@ function resetPrisma() {
     Object.values(value as Record<string, jest.Mock>).forEach((mock) => mock.mockReset());
   });
   prisma.$transaction.mockImplementation(async (callback) => callback(prisma));
+  mockRedisClient.on.mockClear();
+  mockRedisClient.connect.mockClear();
+  mockRedisClient.get.mockReset();
+  mockRedisClient.get.mockResolvedValue(null);
+  mockRedisClient.keys.mockReset();
+  mockRedisClient.keys.mockResolvedValue([]);
+  mockRedisClient.disconnect.mockClear();
 }
 
 describe("QuotationService", () => {
   beforeEach(resetPrisma);
 
   it("should list mapped quotations", async () => {
+    mockRedisClient.keys
+      .mockResolvedValueOnce(["asset:PETR4:latest"])
+      .mockResolvedValueOnce([]);
+    mockRedisClient.get.mockResolvedValueOnce(JSON.stringify({
+      symbol: "PETR4",
+      name: "Petrobras",
+      price: 35.1,
+      updated_at: updatedAt.toISOString()
+    }));
+
+    await expect(new QuotationService().list()).resolves.toEqual([
+      { symbol: "PETR4", name: "Petrobras", reference_price: 35.1, created_at: updatedAt, updated_at: updatedAt }
+    ]);
+
+    expect(prisma.asset.findMany).not.toHaveBeenCalled();
+  });
+
+  it("should fall back to the database when listing quotations and Redis fails", async () => {
+    mockRedisClient.keys.mockRejectedValue(new Error("redis down"));
     prisma.asset.findMany.mockResolvedValue([
       { symbol: "PETR4", name: "Petrobras", referencePrice: 35.1, createdAt, updatedAt }
     ]);
@@ -83,6 +116,32 @@ describe("QuotationService", () => {
   });
 
   it("should get a quotation by symbol", async () => {
+    mockRedisClient.get.mockResolvedValueOnce(JSON.stringify({
+      symbol: "VALE3",
+      name: "Vale",
+      price: 62.2,
+      created_at: createdAt.toISOString(),
+      updated_at: updatedAt.toISOString()
+    }));
+
+    await expect(new QuotationService().getBySymbol("VALE3")).resolves.toEqual({
+      symbol: "VALE3",
+      name: "Vale",
+      reference_price: 62.2,
+      created_at: createdAt,
+      updated_at: updatedAt
+    });
+
+    expect(prisma.asset.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("should return null when a quotation is missing", async () => {
+    await expect(new QuotationService().getBySymbol("XXXX")).resolves.toBeNull();
+    expect(prisma.asset.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("should fall back to the database when getting a quotation and Redis fails", async () => {
+    mockRedisClient.get.mockRejectedValue(new Error("redis down"));
     prisma.asset.findUnique.mockResolvedValue({ symbol: "VALE3", name: "Vale", referencePrice: 62.2, createdAt, updatedAt });
 
     await expect(new QuotationService().getBySymbol("VALE3")).resolves.toEqual({
@@ -94,22 +153,40 @@ describe("QuotationService", () => {
     });
   });
 
-  it("should return null when a quotation is missing", async () => {
-    prisma.asset.findUnique.mockResolvedValue(null);
+  it("should return the price for an existing quotation", async () => {
+    mockRedisClient.get
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce("30");
 
-    await expect(new QuotationService().getBySymbol("XXXX")).resolves.toBeNull();
+    await expect(new QuotationService().getPrice("ITUB4")).resolves.toBe(30);
+    expect(prisma.asset.findUnique).not.toHaveBeenCalled();
   });
 
-  it("should return the price for an existing quotation", async () => {
+  it("should return the Redis price when available", async () => {
+    mockRedisClient.get.mockResolvedValueOnce(JSON.stringify({ symbol: "ITUB4", price: 31.5 }));
+
+    await expect(new QuotationService().getPrice("ITUB4")).resolves.toBe(31.5);
+    expect(prisma.asset.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("should fall back to the seeded Redis price key", async () => {
+    mockRedisClient.get
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce("32.1");
+
+    await expect(new QuotationService().getPrice("ITUB4")).resolves.toBe(32.1);
+  });
+
+  it("should fall back to the database when Redis fails", async () => {
+    mockRedisClient.get.mockRejectedValue(new Error("redis down"));
     prisma.asset.findUnique.mockResolvedValue({ symbol: "ITUB4", name: "Itau", referencePrice: 30, createdAt, updatedAt });
 
     await expect(new QuotationService().getPrice("ITUB4")).resolves.toBe(30);
   });
 
   it("should fail when getting the price for a missing quotation", async () => {
-    prisma.asset.findUnique.mockResolvedValue(null);
-
     await expect(new QuotationService().getPrice("XXXX")).rejects.toThrow("Ativo XXXX");
+    expect(prisma.asset.findUnique).not.toHaveBeenCalled();
   });
 
   it("should disconnect from Prisma", async () => {
@@ -118,6 +195,7 @@ describe("QuotationService", () => {
     await new QuotationService().close();
 
     expect(prisma.$disconnect).toHaveBeenCalled();
+    expect(mockRedisClient.disconnect).toHaveBeenCalled();
   });
 });
 
@@ -207,7 +285,7 @@ describe("OrderService", () => {
   });
 
   it("should create a sell order when the position balance is enough", async () => {
-    prisma.$queryRaw.mockResolvedValue([{ quantity: 10 }]);
+    prisma.position.findUnique.mockResolvedValue({ quantity: 10 });
     prisma.order.create.mockResolvedValue(prismaOrder({ type: "VENDA" }));
 
     await expect(new OrderService({ getPrice: jest.fn() }).create({
@@ -220,7 +298,7 @@ describe("OrderService", () => {
   });
 
   it("should fail when creating a sell order with insufficient balance", async () => {
-    prisma.$queryRaw.mockResolvedValue([{ quantity: 1 }]);
+    prisma.position.findUnique.mockResolvedValue({ quantity: 1 });
 
     await expect(new OrderService({ getPrice: jest.fn() }).create({
       userId: "user-001",
@@ -253,40 +331,46 @@ describe("OrderService", () => {
 
   it("should process a buy order successfully", async () => {
     const quotationService = { getPrice: jest.fn().mockResolvedValue(35) };
-    prisma.$queryRaw.mockResolvedValueOnce([{ id: 1 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder());
+    prisma.order.findUnique
+      .mockResolvedValueOnce(prismaOrder())
+      .mockResolvedValueOnce(prismaOrder({ status: "EXECUTADA" }));
     prisma.asset.findUnique
       .mockResolvedValueOnce({ updatedAt: freshUpdatedAt })
       .mockResolvedValueOnce({ referencePrice: 35 });
     prisma.order.update.mockResolvedValue({});
-    prisma.priceCache.upsert.mockResolvedValue({});
-    prisma.$executeRaw.mockResolvedValue(1);
-    prisma.order.findUnique.mockResolvedValue(prismaOrder({ status: "EXECUTADA" }));
+    prisma.position.findUnique.mockResolvedValue(null);
+    prisma.position.create.mockResolvedValue({});
 
     await expect(new OrderService(quotationService).processOrder(1)).resolves.toEqual(expect.objectContaining({ status: "EXECUTADA" }));
-    expect(prisma.$executeRaw).toHaveBeenCalled();
+    expect(prisma.position.create).toHaveBeenCalled();
   });
 
   it("should process a sell order successfully", async () => {
     const quotationService = { getPrice: jest.fn().mockResolvedValue(35) };
-    prisma.$queryRaw
-      .mockResolvedValueOnce([{ id: 1 }])
-      .mockResolvedValueOnce([{ quantity: 5 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder({ type: "VENDA" }));
+    prisma.order.findUnique
+      .mockResolvedValueOnce(prismaOrder({ type: "VENDA" }))
+      .mockResolvedValueOnce(prismaOrder({ type: "VENDA", status: "EXECUTADA" }));
+    prisma.position.updateMany.mockResolvedValue({ count: 1 });
     prisma.asset.findUnique
       .mockResolvedValueOnce({ updatedAt: freshUpdatedAt })
       .mockResolvedValueOnce({ referencePrice: 35 });
     prisma.order.update.mockResolvedValue({});
-    prisma.priceCache.upsert.mockResolvedValue({});
-    prisma.position.update.mockResolvedValue({});
-    prisma.order.findUnique.mockResolvedValue(prismaOrder({ type: "VENDA", status: "EXECUTADA" }));
 
     await expect(new OrderService(quotationService).processOrder(1)).resolves.toEqual(expect.objectContaining({ type: "VENDA" }));
-    expect(prisma.position.update).toHaveBeenCalled();
+    expect(prisma.position.updateMany).toHaveBeenCalledWith({
+      where: {
+        userId: "user-001",
+        symbol: "PETR4",
+        quantity: { gte: 2 }
+      },
+      data: {
+        quantity: { decrement: 2 }
+      }
+    });
   });
 
-  it("should reject processing when the order lock is missing", async () => {
-    prisma.$queryRaw.mockResolvedValue([]);
+  it("should reject processing when the order is missing", async () => {
+    prisma.order.findUnique.mockResolvedValue(null);
     prisma.order.update.mockResolvedValue({});
 
     await expect(new OrderService({ getPrice: jest.fn() }).processOrder(99)).rejects.toThrow("Ordem não encontrada");
@@ -294,16 +378,14 @@ describe("OrderService", () => {
   });
 
   it("should reject processing when the order is not pending", async () => {
-    prisma.$queryRaw.mockResolvedValue([{ id: 1 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder({ status: "EXECUTADA" }));
+    prisma.order.findUnique.mockResolvedValue(prismaOrder({ status: "EXECUTADA" }));
     prisma.order.update.mockResolvedValue({});
 
     await expect(new OrderService({ getPrice: jest.fn() }).processOrder(1)).rejects.toThrow("status: EXECUTADA");
   });
 
   it("should reject processing when quotation freshness asset is missing", async () => {
-    prisma.$queryRaw.mockResolvedValue([{ id: 1 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder());
+    prisma.order.findUnique.mockResolvedValue(prismaOrder());
     prisma.asset.findUnique.mockResolvedValue(null);
     prisma.order.update.mockResolvedValue({});
 
@@ -311,8 +393,7 @@ describe("OrderService", () => {
   });
 
   it("should reject processing when quotation is stale", async () => {
-    prisma.$queryRaw.mockResolvedValue([{ id: 1 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder());
+    prisma.order.findUnique.mockResolvedValue(prismaOrder());
     prisma.asset.findUnique.mockResolvedValue({ updatedAt: new Date("2020-01-01T00:00:00.000Z") });
     prisma.order.update.mockResolvedValue({});
 
@@ -320,8 +401,7 @@ describe("OrderService", () => {
   });
 
   it("should reject processing when price asset is missing", async () => {
-    prisma.$queryRaw.mockResolvedValue([{ id: 1 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder());
+    prisma.order.findUnique.mockResolvedValue(prismaOrder());
     prisma.asset.findUnique
       .mockResolvedValueOnce({ updatedAt: freshUpdatedAt })
       .mockResolvedValueOnce(null);
@@ -331,8 +411,7 @@ describe("OrderService", () => {
   });
 
   it("should reject processing when price difference is above tolerance", async () => {
-    prisma.$queryRaw.mockResolvedValue([{ id: 1 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder({ price: 100 }));
+    prisma.order.findUnique.mockResolvedValue(prismaOrder({ price: 100 }));
     prisma.asset.findUnique
       .mockResolvedValueOnce({ updatedAt: freshUpdatedAt })
       .mockResolvedValueOnce({ referencePrice: 35 });
@@ -341,62 +420,57 @@ describe("OrderService", () => {
     await expect(new OrderService({ getPrice: jest.fn() }).processOrder(1)).rejects.toThrow("Diferença de preço");
   });
 
-  it("should use cached price when quotation service fails", async () => {
-    const quotationService = { getPrice: jest.fn().mockRejectedValue(new Error("quotes down")) };
+  it("should process using the database fallback when Redis fails", async () => {
+    const quotationService = { getPrice: jest.fn().mockResolvedValue(35) };
     jest.spyOn(global, "setTimeout").mockImplementation((callback: any) => {
       callback();
       return 0 as any;
     });
-    prisma.$queryRaw.mockResolvedValueOnce([{ id: 1 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder());
+    prisma.order.findUnique
+      .mockResolvedValueOnce(prismaOrder())
+      .mockResolvedValueOnce(prismaOrder({ status: "EXECUTADA" }));
     prisma.asset.findUnique
       .mockResolvedValueOnce({ updatedAt: freshUpdatedAt })
       .mockResolvedValueOnce({ referencePrice: 35 });
-    prisma.priceCache.findUnique.mockResolvedValue({ lastPrice: 35 });
     prisma.order.update.mockResolvedValue({});
-    prisma.$executeRaw.mockResolvedValue(1);
-    prisma.order.findUnique.mockResolvedValue(prismaOrder({ status: "EXECUTADA" }));
+    prisma.position.findUnique.mockResolvedValue(null);
+    prisma.position.create.mockResolvedValue({});
 
     await expect(new OrderService(quotationService).processOrder(1)).resolves.toEqual(expect.objectContaining({ status: "EXECUTADA" }));
-    expect(prisma.priceCache.findUnique).toHaveBeenCalled();
+    expect(quotationService.getPrice).toHaveBeenCalledWith("PETR4");
     jest.restoreAllMocks();
   });
 
-  it("should fail when quotation service and cache are unavailable", async () => {
+  it("should fail when Redis and database fallbacks are unavailable", async () => {
     const quotationService = { getPrice: jest.fn().mockRejectedValue(new Error("quotes down")) };
     jest.spyOn(global, "setTimeout").mockImplementation((callback: any) => {
       callback();
       return 0 as any;
     });
-    prisma.$queryRaw.mockResolvedValue([{ id: 1 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder());
+    prisma.order.findUnique.mockResolvedValue(prismaOrder());
     prisma.asset.findUnique
       .mockResolvedValueOnce({ updatedAt: freshUpdatedAt })
       .mockResolvedValueOnce({ referencePrice: 35 });
-    prisma.priceCache.findUnique.mockResolvedValue(null);
     prisma.order.update.mockResolvedValue({});
 
-    await expect(new OrderService(quotationService).processOrder(1)).rejects.toThrow("não há preço em cache");
+    await expect(new OrderService(quotationService).processOrder(1)).rejects.toThrow("fallback no banco falhou");
     jest.restoreAllMocks();
   });
 
   it("should reject a sell order during execution when balance is insufficient", async () => {
     const quotationService = { getPrice: jest.fn().mockResolvedValue(35) };
-    prisma.$queryRaw
-      .mockResolvedValueOnce([{ id: 1 }])
-      .mockResolvedValueOnce([{ quantity: 1 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder({ type: "VENDA" }));
+    prisma.order.findUnique.mockResolvedValue(prismaOrder({ type: "VENDA" }));
+    prisma.position.updateMany.mockResolvedValue({ count: 0 });
     prisma.asset.findUnique
       .mockResolvedValueOnce({ updatedAt: freshUpdatedAt })
       .mockResolvedValueOnce({ referencePrice: 35 });
-    prisma.priceCache.upsert.mockResolvedValue({});
     prisma.order.update.mockResolvedValue({});
 
     await expect(new OrderService(quotationService).processOrder(1)).rejects.toThrow("Saldo insuficiente");
   });
 
   it("should keep the original error when marking an order as rejected fails", async () => {
-    prisma.$queryRaw.mockResolvedValue([]);
+    prisma.order.findUnique.mockResolvedValue(null);
     prisma.order.update.mockRejectedValue(new Error("update failed"));
 
     await expect(new OrderService({ getPrice: jest.fn() }).processOrder(1)).rejects.toThrow("Ordem não encontrada");
@@ -404,15 +478,15 @@ describe("OrderService", () => {
 
   it("should fail when the processed order cannot be reloaded", async () => {
     const quotationService = { getPrice: jest.fn().mockResolvedValue(35) };
-    prisma.$queryRaw.mockResolvedValueOnce([{ id: 1 }]);
-    prisma.order.findUniqueOrThrow.mockResolvedValue(prismaOrder());
+    prisma.order.findUnique
+      .mockResolvedValueOnce(prismaOrder())
+      .mockResolvedValueOnce(null);
     prisma.asset.findUnique
       .mockResolvedValueOnce({ updatedAt: freshUpdatedAt })
       .mockResolvedValueOnce({ referencePrice: 35 });
     prisma.order.update.mockResolvedValue({});
-    prisma.priceCache.upsert.mockResolvedValue({});
-    prisma.$executeRaw.mockResolvedValue(1);
-    prisma.order.findUnique.mockResolvedValue(null);
+    prisma.position.findUnique.mockResolvedValue(null);
+    prisma.position.create.mockResolvedValue({});
 
     await expect(new OrderService(quotationService).processOrder(1)).rejects.toThrow("após processamento");
   });

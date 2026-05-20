@@ -76,6 +76,7 @@ services:
       PORT: 62002
       QUOTATIONS_URL: http://host.docker.internal:3001/quotations
       POLL_INTERVAL_MS: 1000
+      DB_POLL_INTERVAL_MS: 10000
       RETRY_ATTEMPTS: 3
       REDIS_URL: redis://redis:6379
       DB_HOST: mysql
@@ -132,6 +133,7 @@ services:
       PORT: 62000
       # Conexão com MySQL usando nome do serviço (interno do Docker)
       DATABASE_URL: "mysql://app_user:app_password@mysql:3306/investment_orders"
+      REDIS_URL: redis://redis:6379
       SQS_ENDPOINT: http://localstack:4566
       AWS_REGION: sa-east-1
       AWS_ACCESS_KEY_ID: teste
@@ -145,6 +147,8 @@ services:
         condition: service_healthy
       init-sqs:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     networks:
       - investment-network
     restart: unless-stopped
@@ -220,7 +224,7 @@ services:
         python /scripts/init_redis.py
       "
     volumes:
-      - ./scripts:/scripts
+      - ./criar-ordens-api/scripts:/scripts
     networks:
       - investment-network
 

@@ -3,16 +3,21 @@ import { logger } from "./LoggerService";
 import { SQSMessage } from "../types";
 
 const prisma = new PrismaClient();
+const MAX_TRANSACTION_RETRIES = 3;
+
+type ProcessableOrder = {
+  orderId: number;
+  userId: string;
+  symbol: string;
+  type: "COMPRA" | "VENDA";
+  quantity: number;
+  price: number;
+};
 
 /**
- * Serviço de processamento de ordens
+ * Servico de processamento de ordens recebidas via SQS.
  */
 export class OrderService {
-  /**
-   * Processa uma ordem recebida do SQS
-   * - Se PENDENTE: atualiza status para PROCESSANDO, processa posição e finaliza
-   * - Se CANCELADA: apenas atualiza status para CANCELADA
-   */
   async processOrder(message: SQSMessage): Promise<void> {
     const { orderId, userId, symbol, type, quantity, price, status } = message;
 
@@ -21,83 +26,149 @@ export class OrderService {
     );
 
     try {
-      // Valida status da mensagem
       if (status !== "PENDENTE" && status !== "CANCELADA") {
         logger.warn(
-          `[OrderService] Status inválido na mensagem: ${status}. Ignorando.`
+          `[OrderService] Status invalido na mensagem: ${status}. Ignorando.`
         );
         return;
       }
 
-      // Verifica se a ordem existe antes de tentar atualizar
-      const existingOrder = await prisma.order.findUnique({ where: { id: orderId } });
-      if (!existingOrder) {
-        logger.warn(
-          `[OrderService] Ordem ID: ${orderId} não encontrada. Ignorando mensagem.`
-        );
-        return;
-      }
-
-      // Se status é CANCELADA
       if (status === "CANCELADA") {
         logger.info(
           `[OrderService] Cancelando ordem ID: ${orderId}, User: ${userId}`
         );
-        await this.safeUpdateOrderStatus(orderId, "CANCELADA");
-        logger.info(`[OrderService] Ordem ID: ${orderId} cancelada com sucesso`);
+        await this.cancelPendingOrder(orderId);
         return;
       }
 
-      // Se status é PENDENTE
-      if (status === "PENDENTE") {
-        logger.info(
-          `[OrderService] Processando ordem PENDENTE ID: ${orderId}`
+      logger.info(`[OrderService] Processando ordem PENDENTE ID: ${orderId}`);
+
+      try {
+        const processed = await this.processPendingOrderWithRetry({
+          orderId,
+          userId,
+          symbol,
+          type,
+          quantity,
+          price,
+        });
+
+        if (!processed) {
+          logger.info(
+            `[OrderService] Ordem ID: ${orderId} ja foi capturada/processada. Ignorando mensagem duplicada.`
+          );
+        }
+      } catch (processingError: any) {
+        logger.error(
+          `[OrderService] Erro ao processar ordem ID: ${orderId}`,
+          processingError
         );
 
         try {
-          // 1. Atualiza status para PROCESSANDO
-          await this.safeUpdateOrderStatus(orderId, "PROCESSANDO");
-          logger.info(
-            `[OrderService] Status atualizado para PROCESSANDO - Ordem ID: ${orderId}`
-          );
-
-          // 2. Processa a posição do cliente
-          logger.info(
-            `[OrderService] Iniciando processamento de posição para usuário: ${userId}, symbol: ${symbol}`
-          );
-          await this.updatePosition(userId, symbol, quantity, price, type);
-
-          // 3. Se tudo deu certo, atualiza status para EXECUTADA
-          await this.safeUpdateOrderStatus(orderId, "EXECUTADA");
-          logger.info(
-            `[OrderService] Ordem ID: ${orderId} EXECUTADA com sucesso`
-          );
-        } catch (processingError: any) {
+          await this.safeUpdateOrderStatus(orderId, "REJEITADA");
+          logger.error(`[OrderService] Ordem ID: ${orderId} marcada como REJEITADA`);
+        } catch (updateError) {
           logger.error(
-            `[OrderService] Erro ao processar ordem ID: ${orderId}`,
-            processingError
+            `[OrderService] Erro ao atualizar ordem para REJEITADA`,
+            updateError
           );
-
-          // Atualiza status para REJEITADA em caso de erro
-          try {
-            await this.safeUpdateOrderStatus(orderId, "REJEITADA");
-            logger.error(
-              `[OrderService] Ordem ID: ${orderId} marcada como REJEITADA`
-            );
-          } catch (updateError) {
-            logger.error(
-              `[OrderService] Erro ao atualizar ordem para REJEITADA`,
-              updateError
-            );
-          }
-
-          throw processingError;
         }
+
+        throw processingError;
       }
     } catch (error: any) {
-      logger.error(`[OrderService] Erro não tratado ao processar ordem`, error);
+      logger.error(`[OrderService] Erro nao tratado ao processar ordem`, error);
       throw error;
     }
+  }
+
+  private async processPendingOrderWithRetry(order: ProcessableOrder): Promise<boolean> {
+    for (let attempt = 1; attempt <= MAX_TRANSACTION_RETRIES; attempt++) {
+      try {
+        return await this.processPendingOrder(order);
+      } catch (error) {
+        if (attempt < MAX_TRANSACTION_RETRIES && this.isRetryableTransactionError(error)) {
+          logger.warn(
+            `[OrderService] Conflito transacional na ordem ID: ${order.orderId}. Tentativa ${attempt}/${MAX_TRANSACTION_RETRIES}`
+          );
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    return false;
+  }
+
+  private async processPendingOrder(order: ProcessableOrder): Promise<boolean> {
+    return prisma.$transaction(
+      async (tx) => {
+        const claimed = await tx.order.updateMany({
+          where: {
+            id: order.orderId,
+            status: "PENDENTE",
+          },
+          data: { status: "PROCESSANDO" },
+        });
+
+        if (claimed.count === 0) {
+          return false;
+        }
+
+        logger.info(
+          `[OrderService] Status atualizado para PROCESSANDO - Ordem ID: ${order.orderId}`
+        );
+
+        await this.updatePosition(
+          tx,
+          order.userId,
+          order.symbol,
+          order.quantity,
+          order.price,
+          order.type
+        );
+
+        await tx.order.update({
+          where: { id: order.orderId },
+          data: { status: "EXECUTADA" },
+        });
+
+        logger.info(`[OrderService] Ordem ID: ${order.orderId} EXECUTADA com sucesso`);
+
+        return true;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  }
+
+  private async cancelPendingOrder(orderId: number): Promise<boolean> {
+    const updated = await prisma.order.updateMany({
+      where: {
+        id: orderId,
+        status: {
+          in: ["PENDENTE", "PROCESSANDO"],
+        },
+      },
+      data: { status: "CANCELADA" },
+    });
+
+    if (updated.count === 0) {
+      logger.warn(
+        `[OrderService] Ordem ID: ${orderId} nao encontrada ou nao cancelavel. Ignorando cancelamento.`
+      );
+      return false;
+    }
+
+    logger.info(`[OrderService] Ordem ID: ${orderId} cancelada com sucesso`);
+    return true;
+  }
+
+  private isRetryableTransactionError(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2034"
+    );
   }
 
   private async safeUpdateOrderStatus(orderId: number, status: string): Promise<boolean> {
@@ -108,9 +179,9 @@ export class OrderService {
       });
       return true;
     } catch (err: any) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
         logger.warn(
-          `[OrderService] Ordem ID: ${orderId} não encontrada ao atualizar status para ${status}.` 
+          `[OrderService] Ordem ID: ${orderId} nao encontrada ao atualizar status para ${status}.`
         );
         return false;
       }
@@ -118,13 +189,8 @@ export class OrderService {
     }
   }
 
-  /**
-   * Atualiza a posição do cliente
-   * - Seleciona posição atual (ou cria se não existir)
-   * - Calcula nova quantidade e preço médio
-   * - Faz update/insert da posição
-   */
   private async updatePosition(
+    tx: Prisma.TransactionClient,
     userId: string,
     symbol: string,
     quantity: number,
@@ -132,103 +198,82 @@ export class OrderService {
     type: "COMPRA" | "VENDA"
   ): Promise<void> {
     logger.info(
-      `[PositionService] Atualizando posição - User: ${userId}, Symbol: ${symbol}, Quantity: ${quantity}, Price: ${price}, Type: ${type}`
+      `[PositionService] Atualizando posicao - User: ${userId}, Symbol: ${symbol}, Quantity: ${quantity}, Price: ${price}, Type: ${type}`
     );
 
-    try {
-      // Busca posição atual
-      let position = await prisma.position.findUnique({
+    if (type === "VENDA") {
+      const updated = await tx.position.updateMany({
+        where: {
+          userId,
+          symbol,
+          quantity: {
+            gte: quantity,
+          },
+        },
+        data: {
+          quantity: {
+            decrement: quantity,
+          },
+        },
+      });
+
+      if (updated.count === 0) {
+        throw new Error(`Saldo insuficiente do ativo ${symbol} para venda. Solicitado: ${quantity}`);
+      }
+
+      logger.info(`[PositionService] Venda aplicada - Qtd decrementada: ${quantity}`);
+      return;
+    }
+
+    const position = await tx.position.findUnique({
+      where: {
+        userId_symbol: {
+          userId,
+          symbol,
+        },
+      },
+    });
+
+    if (position) {
+      const currentQuantity = Number(position.quantity);
+      const currentAveragePrice = Number(position.averagePrice);
+      const totalCost = currentQuantity * currentAveragePrice + quantity * price;
+      const newQuantity = currentQuantity + quantity;
+      const newAveragePrice = totalCost / newQuantity;
+      const newTotalValue = newQuantity * newAveragePrice;
+
+      await tx.position.update({
         where: {
           userId_symbol: {
             userId,
             symbol,
           },
         },
+        data: {
+          quantity: newQuantity,
+          averagePrice: newAveragePrice,
+          totalValue: newTotalValue,
+        },
       });
 
-      let newQuantity = 0;
-      let newAveragePrice = 0;
-      let newTotalValue = 0;
-
-      if (position) {
-        // Posição já existe
-        const currentQuantity = parseFloat(position.quantity.toString());
-        const currentAveragePrice = parseFloat(
-          position.averagePrice.toString()
-        );
-        const currentTotalValue = parseFloat(position.totalValue.toString());
-
-        logger.info(
-          `[PositionService] Posição atual - Qtd: ${currentQuantity}, Preço Médio: ${currentAveragePrice}, Total: ${currentTotalValue}`
-        );
-
-        if (type === "COMPRA") {
-          // Compra: soma quantidade e recalcula preço médio
-          const totalCost =
-            currentQuantity * currentAveragePrice + quantity * price;
-          newQuantity = currentQuantity + quantity;
-          newAveragePrice = totalCost / newQuantity;
-          newTotalValue = newQuantity * newAveragePrice;
-        } else {
-          // Venda: reduz quantidade
-          newQuantity = currentQuantity - quantity;
-          if (newQuantity < 0) {
-            throw new Error(
-              `Saldo insuficiente do ativo ${symbol} para venda. Posição: ${currentQuantity}, Solicitado: ${quantity}`
-            );
-          }
-          // Preço médio continua o mesmo
-          newAveragePrice = currentAveragePrice;
-          newTotalValue = newQuantity * newAveragePrice;
-        }
-
-        // Atualiza posição
-        await prisma.position.update({
-          where: {
-            userId_symbol: {
-              userId,
-              symbol,
-            },
-          },
-          data: {
-            quantity: newQuantity,
-            averagePrice: newAveragePrice,
-            totalValue: newTotalValue,
-          },
-        });
-
-        logger.info(
-          `[PositionService] Posição atualizada - Qtd: ${newQuantity}, Preço Médio: ${newAveragePrice}, Total: ${newTotalValue}`
-        );
-      } else {
-        // Cria nova posição (só para COMPRA)
-        if (type === "VENDA") {
-          throw new Error(
-            `Não existe posição do ativo ${symbol} para o usuário ${userId}`
-          );
-        }
-
-        newQuantity = quantity;
-        newAveragePrice = price;
-        newTotalValue = quantity * price;
-
-        await prisma.position.create({
-          data: {
-            userId,
-            symbol,
-            quantity: newQuantity,
-            averagePrice: newAveragePrice,
-            totalValue: newTotalValue,
-          },
-        });
-
-        logger.info(
-          `[PositionService] Nova posição criada - Qtd: ${newQuantity}, Preço: ${newAveragePrice}, Total: ${newTotalValue}`
-        );
-      }
-    } catch (error: any) {
-      logger.error(`[PositionService] Erro ao atualizar posição`, error);
-      throw error;
+      logger.info(
+        `[PositionService] Posicao atualizada - Qtd: ${newQuantity}, Preco Medio: ${newAveragePrice}, Total: ${newTotalValue}`
+      );
+      return;
     }
+
+    await tx.position.create({
+      data: {
+        userId,
+        symbol,
+        quantity,
+        averagePrice: price,
+        totalValue: quantity * price,
+      },
+    });
+
+    logger.info(
+      `[PositionService] Nova posicao criada - Qtd: ${quantity}, Preco: ${price}, Total: ${quantity * price}`
+    );
   }
 }

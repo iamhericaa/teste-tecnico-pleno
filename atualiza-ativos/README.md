@@ -1,23 +1,26 @@
 # atualiza-ativos
 
-API TypeScript responsável por consumir `http://localhost:3001/quotations` a cada 1 segundo, salvar cotações no Redis e no banco de dados e permitir atualizações pontuais de ativos.
+API TypeScript responsavel por consumir `http://localhost:3001/quotations`, salvar cotacoes no Redis a cada 1 segundo, salvar no banco de dados a cada 10 segundos e permitir atualizacoes pontuais de ativos.
 
 ## Funcionamento
 
-- Polling contínuo a `http://localhost:3001/quotations` a cada 1 segundo.
-- Quando o endpoint responde `200`, os dados são salvos primeiro no Redis e depois no banco de dados.
-- Em `502`, se o tempo de resposta ultrapassar 800ms, a operação é cancelada.
-- Em `503` ou `504`, há retry com backoff exponencial: 1s, 2s e 4s, até 3 tentativas.
-- Endpoint HTTP único:
-  - `POST /assets` (atualiza todas as cotações à vista)
-  - `POST /assets/:symbol` (atualiza apenas o ativo especificado)
+- Polling continuo a `http://localhost:3001/quotations` para Redis a cada 1 segundo.
+- Polling para banco de dados a cada 10 segundos por padrao.
+- Quando o endpoint responde `200`, os dados sao salvos no destino do ciclo atual.
+- Em `502`, se o tempo de resposta ultrapassar 800ms, a operacao e cancelada.
+- Em `503` ou `504`, ha retry com backoff exponencial: 1s, 2s e 4s, ate 3 tentativas.
+- Endpoint HTTP unico:
+  - `POST /assets` atualiza todas as cotacoes a vista.
+  - `POST /assets/:symbol` atualiza apenas o ativo especificado.
 
-## Variáveis de ambiente
+## Variaveis de ambiente
 
 - `PORT` - porta da API (default `4002`)
-- `QUOTATIONS_URL` - URL base das cotações (default `http://localhost:3001/quotations`)
-- `REDIS_URL` - conexão Redis (default `redis://localhost:6379`)
-- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` - configurações do MySQL
+- `QUOTATIONS_URL` - URL base das cotacoes (default `http://localhost:3001/quotations`)
+- `POLL_INTERVAL_MS` - intervalo de salvamento no Redis (default `1000`)
+- `DB_POLL_INTERVAL_MS` - intervalo de salvamento no banco de dados (default `10000`)
+- `REDIS_URL` - conexao Redis (default `redis://localhost:6379`)
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` - configuracoes do MySQL
 
 ## Como usar
 
@@ -27,7 +30,7 @@ npm install
 npm run dev
 ```
 
-Exemplo de uso do endpoint de atualização de ativo:
+Exemplo de uso do endpoint de atualizacao de ativo:
 
 ```bash
 curl -X POST http://localhost:4002/assets/ITUB4

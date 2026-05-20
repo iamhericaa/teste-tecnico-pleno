@@ -4,9 +4,11 @@ import { QuotationSaverFactory } from './factories/QuotationSaverFactory';
 import { QuotationSourceFactory } from './factories/QuotationSourceFactory';
 import { logger } from './logger';
 
-export function createProcessor(): QuotationProcessor {
+export function createProcessor(
+  saverType: 'redis' | 'db' | 'composite' = 'composite'
+): QuotationProcessor {
   const source = QuotationSourceFactory.create('http');
-  const saver = QuotationSaverFactory.create('composite');
+  const saver = QuotationSaverFactory.create(saverType);
   return new QuotationProcessor(source, saver);
 }
 
