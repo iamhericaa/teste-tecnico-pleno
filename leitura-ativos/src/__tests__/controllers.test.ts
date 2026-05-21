@@ -19,19 +19,38 @@ function createResponse() {
 
 describe("QuotationController", () => {
   it("should list quotations", async () => {
-    const service = { list: jest.fn().mockResolvedValue([{ symbol: "PETR4" }]) };
+    const result = {
+      data: [{ symbol: "PETR4" }],
+      pagination: { page: 1, per_page: 10, total: 1, total_pages: 1 }
+    };
+    const service = { list: jest.fn().mockResolvedValue(result) };
     const res = createResponse();
 
-    await new QuotationController(service as any).list({} as any, res);
+    await new QuotationController(service as any).list({ query: {} } as any, res);
 
-    expect(res.json).toHaveBeenCalledWith([{ symbol: "PETR4" }]);
+    expect(service.list).toHaveBeenCalledWith({ page: 1, perPage: 10 });
+    expect(res.json).toHaveBeenCalledWith(result);
+  });
+
+  it("should list quotations with custom pagination", async () => {
+    const result = {
+      data: [{ symbol: "VALE3" }],
+      pagination: { page: 2, per_page: 5, total: 6, total_pages: 2 }
+    };
+    const service = { list: jest.fn().mockResolvedValue(result) };
+    const res = createResponse();
+
+    await new QuotationController(service as any).list({ query: { page: "2", per_page: "5" } } as any, res);
+
+    expect(service.list).toHaveBeenCalledWith({ page: 2, perPage: 5 });
+    expect(res.json).toHaveBeenCalledWith(result);
   });
 
   it("should return 500 when listing quotations fails", async () => {
     const service = { list: jest.fn().mockRejectedValue(new Error("db failed")) };
     const res = createResponse();
 
-    await new QuotationController(service as any).list({} as any, res);
+    await new QuotationController(service as any).list({ query: {} } as any, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: "Erro interno do servidor" });

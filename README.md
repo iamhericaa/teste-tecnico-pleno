@@ -74,7 +74,7 @@ Serve cotações, ordens e posições. A primeira tentativa de leitura é feita 
 
 ```
 GET /                       health check
-GET /quotations             lista todos os ativos e cotações
+GET /quotations             lista ativos e cotações com paginação (default: 10 por página)
 GET /quotations/:symbol     cotação de um ativo específico
 GET /orders?userId=...      ordens de um usuário (desc por createdAt)
 GET /orders/:id             detalhe de uma ordem
@@ -278,6 +278,57 @@ Os cenários abaixo são referências para validar comportamento sob carga em um
 | **Stress Test** | Aumento rápido de demanda em poucos minutos | Simular aumento brusco de uso |
 | **Soak Test** | Carga sustentada por 4 horas | Detectar vazamento de memória e degradação acumulada |
 | **Spike Test** | Picos curtos de requisições | Simular abertura de mercado e verificar recuperação pós-pico |
+
+Os cenarios foram materializados em uma suite k6 em `scripts/performance`.
+
+Exemplo rapido local:
+
+```powershell
+docker compose up -d --build
+$env:QUICK="true"
+$env:TEST_TYPE="target"
+docker compose --profile performance run --rm k6
+```
+
+Grafana: `http://localhost:3000` (`admin` / `admin`).
+Prometheus: `http://localhost:9090`.
+Dashboard: `Dashboards > Performance > k6 - Performance Ordens`.
+
+Cenarios disponiveis:
+
+```powershell
+$env:QUICK="false"; $env:TEST_TYPE="ramp"; docker compose --profile performance run --rm k6
+$env:QUICK="false"; $env:TEST_TYPE="stress"; docker compose --profile performance run --rm k6
+$env:QUICK="false"; $env:TEST_TYPE="soak"; docker compose --profile performance run --rm k6
+$env:QUICK="false"; $env:TEST_TYPE="spike"; docker compose --profile performance run --rm k6
+```
+
+Cenario alvo:
+
+```powershell
+$env:QUICK="false"
+$env:TEST_TYPE="target"
+$env:TARGET_ORDER_RPS="1000"
+$env:TARGET_QUOTATION_RPS="10000"
+$env:TARGET_CONCURRENT_USERS="10000"
+$env:TARGET_DURATION="3m"
+docker compose --profile performance run --rm k6
+```
+
+Para Docker/k6 no PowerShell:
+
+```powershell
+docker run --rm -i -v ${PWD}/scripts/performance:/scripts grafana/k6 run `
+  -e QUICK=true `
+  -e TEST_TYPE=ramp `
+  -e READ_BASE_URL=http://host.docker.internal:62000 `
+  -e WRITE_BASE_URL=http://host.docker.internal:62001 `
+  -e K6_PROMETHEUS_RW_SERVER_URL=http://host.docker.internal:9090/api/v1/write `
+  -o experimental-prometheus-rw `
+  /scripts/orders-load-test.js
+```
+
+Mais detalhes: `scripts/performance/README.md`.
 
 ---
 

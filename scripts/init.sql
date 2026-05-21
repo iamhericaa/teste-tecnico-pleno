@@ -85,7 +85,20 @@ INSERT INTO assets (symbol, name, reference_price) VALUES
     ('SOL', 'Solana', 418.07),
     ('BTC', 'Bitcoin', 350000.00),
     ('ETH', 'Ethereum', 18500.00),
-    ('HRC', 'Teste', 100.00);
+    ('HRC', 'Teste', 100.00),
+    ('PETR4', 'Petrobras PN', 38.50),
+    ('PETR3', 'Petrobras ON', 41.20),
+    ('VALE3', 'Vale ON', 62.75),
+    ('BBDC4', 'Bradesco PN', 14.90),
+    ('ABEV3', 'Ambev ON', 12.35),
+    ('MGLU3', 'Magazine Luiza ON', 2.10),
+    ('WEGE3', 'Weg ON', 39.80),
+    ('RENT3', 'Localiza ON', 47.60),
+    ('BBAS3', 'Banco do Brasil ON', 28.40),
+    ('B3SA3', 'B3 ON', 11.25),
+    ('XRP', 'XRP', 2.85),
+    ('ADA', 'Cardano', 3.10),
+    ('BNB', 'BNB', 3150.00);
 
 -- Inserir usuário de teste
 INSERT INTO users (id, name) VALUES

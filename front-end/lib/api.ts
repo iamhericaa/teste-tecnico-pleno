@@ -14,10 +14,46 @@ const ordensApi = axios.create({
   baseURL: ORDENS_API_BASE_URL,
 });
 
+export interface Asset {
+  symbol: string;
+  name: string;
+  reference_price: number;
+}
+
+export interface Pagination {
+  page: number;
+  per_page: number;
+  total: number;
+  total_pages: number;
+}
+
+export interface PaginatedQuotations {
+  data: Asset[];
+  pagination: Pagination;
+}
+
+function normalizeQuotationsResponse(data: Asset[] | PaginatedQuotations): PaginatedQuotations {
+  if (Array.isArray(data)) {
+    return {
+      data,
+      pagination: {
+        page: 1,
+        per_page: data.length,
+        total: data.length,
+        total_pages: 1,
+      },
+    };
+  }
+
+  return data;
+}
+
 export const api = {
-  getQuotations: async () => {
-    const response = await leituraApi.get('/quotations');
-    return response.data;
+  getQuotations: async (params: { page?: number; per_page?: number } = {}) => {
+    const response = await leituraApi.get<Asset[] | PaginatedQuotations>('/quotations', {
+      params,
+    });
+    return normalizeQuotationsResponse(response.data);
   },
 
   getQuotation: async (symbol: string) => {

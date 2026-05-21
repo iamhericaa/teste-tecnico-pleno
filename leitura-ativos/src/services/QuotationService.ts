@@ -10,6 +10,21 @@ export interface Asset {
   updated_at: Date;
 }
 
+export interface PaginationParams {
+  page: number;
+  perPage: number;
+}
+
+export interface PaginatedAssets {
+  data: Asset[];
+  pagination: {
+    page: number;
+    per_page: number;
+    total: number;
+    total_pages: number;
+  };
+}
+
 type PrismaAsset = {
   symbol: string;
   name: string;
@@ -32,6 +47,22 @@ function mapRedisQuotation(asset: RedisQuotation): Asset {
   return { ...asset };
 }
 
+function paginateAssets(assets: Asset[], pagination: PaginationParams): PaginatedAssets {
+  const total = assets.length;
+  const totalPages = Math.ceil(total / pagination.perPage);
+  const start = (pagination.page - 1) * pagination.perPage;
+
+  return {
+    data: assets.slice(start, start + pagination.perPage),
+    pagination: {
+      page: pagination.page,
+      per_page: pagination.perPage,
+      total,
+      total_pages: totalPages,
+    },
+  };
+}
+
 export class QuotationService {
   constructor(
     private readonly redisClient: Pick<
@@ -40,7 +71,7 @@ export class QuotationService {
     > = redisPriceClient
   ) {}
 
-  async list(): Promise<Asset[]> {
+  async list(pagination: PaginationParams = { page: 1, perPage: 10 }): Promise<PaginatedAssets> {
     logger.info("QuotationService.list", "Listando cotacoes pelo Redis");
 
     try {
@@ -50,10 +81,10 @@ export class QuotationService {
         count: assets.length,
       });
 
-      return assets.map(mapRedisQuotation);
+      return paginateAssets(assets.map(mapRedisQuotation), pagination);
     } catch (error) {
       logger.error("QuotationService.list", "Falha ao consultar Redis; usando banco", error);
-      return this.listFromDatabase();
+      return this.listFromDatabase(pagination);
     }
   }
 
@@ -128,7 +159,7 @@ export class QuotationService {
     await prisma.$disconnect();
   }
 
-  private async listFromDatabase(): Promise<Asset[]> {
+  private async listFromDatabase(pagination: PaginationParams): Promise<PaginatedAssets> {
     const assets = await prisma.asset.findMany({
       select: {
         symbol: true,
@@ -137,13 +168,16 @@ export class QuotationService {
         createdAt: true,
         updatedAt: true,
       },
+      orderBy: {
+        symbol: "asc",
+      },
     });
 
     logger.info("QuotationService.listFromDatabase", "Cotacoes listadas pelo banco com sucesso", {
       count: assets.length,
     });
 
-    return assets.map(mapAsset);
+    return paginateAssets(assets.map(mapAsset), pagination);
   }
 
   private async getBySymbolFromDatabase(symbol: string): Promise<Asset | null> {

@@ -12,7 +12,7 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./leitura-ativos/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
       test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
@@ -241,9 +241,79 @@ services:
         condition: service_healthy
     networks:
       - investment-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: investment_prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./scripts/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - investment-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: investment_grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./scripts/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./scripts/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - investment-network
+    restart: unless-stopped
+
+  k6:
+    image: grafana/k6:latest
+    profiles:
+      - performance
+    environment:
+      TEST_TYPE: ${TEST_TYPE:-ramp}
+      QUICK: ${QUICK:-true}
+      MAX_VUS: ${MAX_VUS:-50}
+      WRITE_PERCENT: ${WRITE_PERCENT:-10}
+      THINK_TIME_SECONDS: ${THINK_TIME_SECONDS:-1}
+      TARGET_ORDER_RPS: ${TARGET_ORDER_RPS:-1000}
+      TARGET_QUOTATION_RPS: ${TARGET_QUOTATION_RPS:-10000}
+      TARGET_CONCURRENT_USERS: ${TARGET_CONCURRENT_USERS:-50000}
+      TARGET_DURATION: ${TARGET_DURATION:-}
+      READ_BASE_URL: http://api-leitura-ativos:62000
+      WRITE_BASE_URL: http://api-criar-ordens:62001
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM: "false"
+      K6_PROMETHEUS_RW_TREND_STATS: "p(90),p(95),p(99),avg,max"
+      K6_PROMETHEUS_RW_PUSH_INTERVAL: 5s
+    command:
+      - run
+      - -o
+      - experimental-prometheus-rw
+      - /scripts/orders-load-test.js
+    volumes:
+      - ./scripts/performance:/scripts:ro
+    depends_on:
+      - prometheus
+      - api-leitura-ativos
+      - api-criar-ordens
+    networks:
+      - investment-network
 volumes:
   mysql_data:
   localstack_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   investment-network:

@@ -68,6 +68,12 @@ curl http://localhost:62000/
 curl http://localhost:62000/quotations
 ```
 
+Por padrao, retorna 10 ativos por pagina. Use `page` e `per_page` para navegar:
+
+```bash
+curl "http://localhost:62000/quotations?page=2&per_page=10"
+```
+
 ### GET /quotations/:symbol
 
 ```bash

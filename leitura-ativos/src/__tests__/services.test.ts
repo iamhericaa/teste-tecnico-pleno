@@ -97,9 +97,12 @@ describe("QuotationService", () => {
       updated_at: updatedAt.toISOString()
     }));
 
-    await expect(new QuotationService().list()).resolves.toEqual([
-      { symbol: "PETR4", name: "Petrobras", reference_price: 35.1, created_at: updatedAt, updated_at: updatedAt }
-    ]);
+    await expect(new QuotationService().list()).resolves.toEqual({
+      data: [
+        { symbol: "PETR4", name: "Petrobras", reference_price: 35.1, created_at: updatedAt, updated_at: updatedAt }
+      ],
+      pagination: { page: 1, per_page: 10, total: 1, total_pages: 1 }
+    });
 
     expect(prisma.asset.findMany).not.toHaveBeenCalled();
   });
@@ -110,9 +113,29 @@ describe("QuotationService", () => {
       { symbol: "PETR4", name: "Petrobras", referencePrice: 35.1, createdAt, updatedAt }
     ]);
 
-    await expect(new QuotationService().list()).resolves.toEqual([
-      { symbol: "PETR4", name: "Petrobras", reference_price: 35.1, created_at: createdAt, updated_at: updatedAt }
-    ]);
+    await expect(new QuotationService().list()).resolves.toEqual({
+      data: [
+        { symbol: "PETR4", name: "Petrobras", reference_price: 35.1, created_at: createdAt, updated_at: updatedAt }
+      ],
+      pagination: { page: 1, per_page: 10, total: 1, total_pages: 1 }
+    });
+  });
+
+  it("should paginate quotations", async () => {
+    mockRedisClient.keys
+      .mockResolvedValueOnce(["asset:ABEV3:latest", "asset:PETR4:latest", "asset:VALE3:latest"])
+      .mockResolvedValueOnce([]);
+    mockRedisClient.get
+      .mockResolvedValueOnce(JSON.stringify({ symbol: "ABEV3", name: "Ambev", price: 12, updated_at: updatedAt.toISOString() }))
+      .mockResolvedValueOnce(JSON.stringify({ symbol: "PETR4", name: "Petrobras", price: 35, updated_at: updatedAt.toISOString() }))
+      .mockResolvedValueOnce(JSON.stringify({ symbol: "VALE3", name: "Vale", price: 62, updated_at: updatedAt.toISOString() }));
+
+    await expect(new QuotationService().list({ page: 2, perPage: 2 })).resolves.toEqual({
+      data: [
+        { symbol: "VALE3", name: "Vale", reference_price: 62, created_at: updatedAt, updated_at: updatedAt }
+      ],
+      pagination: { page: 2, per_page: 2, total: 3, total_pages: 2 }
+    });
   });
 
   it("should get a quotation by symbol", async () => {
