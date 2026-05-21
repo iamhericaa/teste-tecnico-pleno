@@ -225,6 +225,24 @@ export class OrderService {
       return;
     }
 
+    const reservedAsset = await tx.asset.updateMany({
+      where: {
+        symbol,
+        quantity: {
+          gte: quantity,
+        },
+      },
+      data: {
+        quantity: {
+          decrement: quantity,
+        },
+      },
+    });
+
+    if (reservedAsset.count === 0) {
+      throw new Error(`Quantidade indisponivel do ativo ${symbol} para compra. Solicitado: ${quantity}`);
+    }
+
     const position = await tx.position.findUnique({
       where: {
         userId_symbol: {

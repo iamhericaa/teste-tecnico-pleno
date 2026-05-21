@@ -224,7 +224,7 @@ services:
         python /scripts/init_redis.py
       "
     volumes:
-      - ./criar-ordens-api/scripts:/scripts
+      - ./scripts:/scripts
     networks:
       - investment-network
 

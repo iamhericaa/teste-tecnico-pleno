@@ -24,7 +24,7 @@ pids
 *.pid
 *.seed
 *.pid.lock
-*.next
+.next/
 
 # 4. Environment Variables
 .env
@@ -48,4 +48,4 @@ coverage/
 # 7. OS-specific Files
 .DS_Store
 Thumbs.db
-front-end/.next/*
+front-end/.next/

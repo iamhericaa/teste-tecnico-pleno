@@ -10,6 +10,9 @@ const prisma = {
     updateMany: jest.fn(),
     create: jest.fn()
   },
+  asset: {
+    updateMany: jest.fn()
+  },
   $transaction: jest.fn()
 };
 
@@ -60,6 +63,7 @@ describe("OrderService", () => {
     prisma.order.updateMany.mockResolvedValue({ count: 1 });
     prisma.order.update.mockResolvedValue({});
     prisma.position.updateMany.mockResolvedValue({ count: 1 });
+    prisma.asset.updateMany.mockResolvedValue({ count: 1 });
   });
 
   it("should ignore messages with an invalid status", async () => {
@@ -109,6 +113,15 @@ describe("OrderService", () => {
       where: { id: 1, status: "PENDENTE" },
       data: { status: "PROCESSANDO" }
     });
+    expect(prisma.asset.updateMany).toHaveBeenCalledWith({
+      where: {
+        symbol: "PETR4",
+        quantity: { gte: 2 }
+      },
+      data: {
+        quantity: { decrement: 2 }
+      }
+    });
     expect(prisma.position.create).toHaveBeenCalledWith({
       data: {
         userId: "user-001",
@@ -121,6 +134,19 @@ describe("OrderService", () => {
     expect(prisma.order.update).toHaveBeenCalledWith({
       where: { id: 1 },
       data: { status: "EXECUTADA" }
+    });
+  });
+
+  it("should reject a buy order when the asset quantity is unavailable", async () => {
+    prisma.asset.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(new OrderService().processOrder(pendingBuyMessage)).rejects.toThrow("Quantidade indisponivel");
+
+    expect(prisma.position.create).not.toHaveBeenCalled();
+    expect(prisma.position.update).not.toHaveBeenCalled();
+    expect(prisma.order.update).toHaveBeenLastCalledWith({
+      where: { id: 1 },
+      data: { status: "REJEITADA" }
     });
   });
 

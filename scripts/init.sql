@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS assets (
     symbol VARCHAR(10) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     reference_price DECIMAL(15, 2) NOT NULL,
+    quantity DECIMAL(15, 8) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -78,27 +79,27 @@ CREATE INDEX idx_positions_user_id ON positions(user_id);
 -- =====================================================
 
 -- Inserir ativos disponíveis
-INSERT INTO assets (symbol, name, reference_price) VALUES
-    ('ITUB4', 'Itaú Unibanco PN', 32.80),
-    ('ITUB3', 'Itaú Unibanco ON', 15.40),
-    ('USDC', 'USD Coin', 5.50),
-    ('SOL', 'Solana', 418.07),
-    ('BTC', 'Bitcoin', 350000.00),
-    ('ETH', 'Ethereum', 18500.00),
-    ('HRC', 'Teste', 100.00),
-    ('PETR4', 'Petrobras PN', 38.50),
-    ('PETR3', 'Petrobras ON', 41.20),
-    ('VALE3', 'Vale ON', 62.75),
-    ('BBDC4', 'Bradesco PN', 14.90),
-    ('ABEV3', 'Ambev ON', 12.35),
-    ('MGLU3', 'Magazine Luiza ON', 2.10),
-    ('WEGE3', 'Weg ON', 39.80),
-    ('RENT3', 'Localiza ON', 47.60),
-    ('BBAS3', 'Banco do Brasil ON', 28.40),
-    ('B3SA3', 'B3 ON', 11.25),
-    ('XRP', 'XRP', 2.85),
-    ('ADA', 'Cardano', 3.10),
-    ('BNB', 'BNB', 3150.00);
+INSERT INTO assets (symbol, name, reference_price, quantity) VALUES
+    ('ITUB4', 'Itaú Unibanco PN', 32.80, 10000),
+    ('ITUB3', 'Itaú Unibanco ON', 15.40, 8000),
+    ('USDC', 'USD Coin', 5.50, 50000),
+    ('SOL', 'Solana', 418.07, 1200),
+    ('BTC', 'Bitcoin', 350000.00, 25),
+    ('ETH', 'Ethereum', 18500.00, 150),
+    ('HRC', 'Teste', 100.00, 1000),
+    ('PETR4', 'Petrobras PN', 38.50, 12000),
+    ('PETR3', 'Petrobras ON', 41.20, 7000),
+    ('VALE3', 'Vale ON', 62.75, 9000),
+    ('BBDC4', 'Bradesco PN', 14.90, 15000),
+    ('ABEV3', 'Ambev ON', 12.35, 20000),
+    ('MGLU3', 'Magazine Luiza ON', 2.10, 30000),
+    ('WEGE3', 'Weg ON', 39.80, 6000),
+    ('RENT3', 'Localiza ON', 47.60, 5000),
+    ('BBAS3', 'Banco do Brasil ON', 28.40, 11000),
+    ('B3SA3', 'B3 ON', 11.25, 14000),
+    ('XRP', 'XRP', 2.85, 100000),
+    ('ADA', 'Cardano', 3.10, 90000),
+    ('BNB', 'BNB', 3150.00, 400);
 
 -- Inserir usuário de teste
 INSERT INTO users (id, name) VALUES

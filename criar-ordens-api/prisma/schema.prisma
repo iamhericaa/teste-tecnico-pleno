@@ -50,6 +50,7 @@ model Asset {
   symbol         String  @id
   name           String
   referencePrice Decimal @map("reference_price") @db.Decimal(15, 2)
+  quantity       Decimal @db.Decimal(15, 8)
 
   @@map("assets")
 }
