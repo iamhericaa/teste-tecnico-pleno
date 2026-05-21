@@ -202,60 +202,6 @@ Algumas decisões de implementação seguem padrões conhecidos. A lista abaixo 
 
 ## Fluxo de Compra e Venda
 
-```
-flowchart TD
-    usuario[Cliente / Front-end]
-
-    subgraph aws[AWS]
-        subgraph ecs24[ECS - APIs e Workers]
-            leitura[leitura-ativos API\nECS 24/7]
-            criar[criar-ordens-api\nECS em horário comercial]
-            atualiza[atualiza-ativos\nWorker ECS]
-        end
-
-        sqs[Amazon SQS\nFila de ordens pendentes]
-        lambda[processamento-ativos\nAWS Lambda acionada via SQS]
-        redis[(Redis / ElastiCache)]
-        banco[(Banco de dados)]
-        mercado[Serviço externo de cotações / mercado]
-    end
-
-    usuario -->|Consulta ativos, posição e status| leitura
-    leitura -->|Busca cache| redis
-    leitura -->|Fallback / dados persistidos| banco
-
-    atualiza -->|Consulta cotações| mercado
-    atualiza -->|Atualiza cotações em cache| redis
-    atualiza -->|Persiste histórico / última cotação| banco
-
-    usuario -->|Envia ordem de COMPRA ou VENDA| criar
-    criar -->|Valida horário comercial, ativo, usuário e payload| banco
-    criar -->|Cria ordem com status PENDENTE| banco
-    criar -->|Publica ordem PENDENTE| sqs
-
-    sqs -->|Trigger por mensagem| lambda
-    lambda -->|Carrega ordem, saldo, posição e cotação| banco
-    lambda -->|Consulta cotação/cache quando necessário| redis
-
-    lambda --> decisao{Tipo de ordem}
-    decisao -->|COMPRA| validaCompra{Saldo suficiente?}
-    decisao -->|VENDA| validaVenda{Posição suficiente?}
-
-    validaCompra -->|Sim| executa[Executa ordem]
-    validaCompra -->|Não| rejeita[Rejeita ordem]
-    validaVenda -->|Sim| executa
-    validaVenda -->|Não| rejeita
-
-    executa -->|Atualiza status EXECUTADO,\nsaldo e posição| banco
-    executa -->|Atualiza cache de status/posição| redis
-    rejeita -->|Atualiza status REJEITADO\ncom motivo| banco
-    rejeita -->|Atualiza cache de status| redis
-
-    usuario -->|Consulta status da ordem| leitura
-```
-
-**Resumo do fluxo:**
-
 1. O cliente consulta ativos, posição e status pela API `leitura-ativos`, disponível 24/7 no ECS.
 2. O worker `atualiza-ativos`, também no ECS, mantém cotações frescas no Redis e no banco.
 3. Em horário comercial, o cliente envia uma ordem para `criar-ordens-api`.
@@ -289,6 +235,7 @@ $env:QUICK="true"
 $env:TEST_TYPE="target"
 docker compose --profile performance run --rm k6
 ```
+> 250 usuários virtuais simultaneos por 2 minutos, 100 RPS em ativos com 50 usuários virtuais pré alocados. 10 RPS para criação de ordens com 25 usuários virtuais pré alocados. 
 
 Grafana: `http://localhost:3000` (`admin` / `admin`).
 Prometheus: `http://localhost:9090`.
